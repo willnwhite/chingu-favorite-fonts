@@ -57,15 +57,15 @@ view model =
       [text ("Error: " ++ Debug.toString err)]
     Success allFonts ->
       let
-          fonts = {-List.take 8 -}allFonts -- take gives first n members of the list
-          -- TODO make one request for all the fonts
+          fonts = List.take 8 allFonts -- take gives first n members of the list
+          fontsJoined = List.foldl (\a b -> a ++ "|" ++ b) "" (List.map .family fonts) -- font families joined with | as per API
       in
-      [div [] (List.map (\font ->
+      [Html.node "link" [rel "stylesheet"
+      , href ("https://fonts.googleapis.com/css?family=" ++ fontsJoined) -- TODO put +s between words and URL encode
+      ] []
+      , div [] (List.map (\font ->
         div [] [
-          Html.node "link" [rel "stylesheet"
-          , href ("https://fonts.googleapis.com/css?family=" ++ font.family) -- TODO put +s between words and URL encode
-          ] []
-          , div [] [text font.family]
+          div [] [text font.family]
           , div [style "font-family" ("'" ++ font.family ++ "', " ++ font.category)] [text model.text]
           , br [] []
         ]

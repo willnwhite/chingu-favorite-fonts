@@ -1,6 +1,6 @@
 import Html exposing (..)
-import Html.Attributes exposing (style, rel, href)
-import Html.Events exposing (onClick)
+import Html.Attributes exposing (style, rel, href, type_, placeholder)
+import Html.Events exposing (onClick, onInput)
 import Browser
 import RemoteData exposing (WebData, RemoteData(..))
 import Json.Decode exposing (..)
@@ -17,7 +17,7 @@ type alias Font =
   { family : String
   , category : String
   }
-  
+
 type alias Model =
   { fonts : WebData Fonts
   , visibleFonts : Fonts
@@ -26,13 +26,14 @@ type alias Model =
   } -- perhaps refactor so that visible fonts is part of fonts
 
 n = 8 -- number of fonts to get at a time
+defaultText = "Making the Web Beautiful!"
 
 init : () -> ( Model, Cmd Msg )
 init _ =
   ( { fonts = Loading
     , visibleFonts = []
     , restOfFonts = []
-    , text = "Making the Web Beautiful!"
+    , text = defaultText
     }
   , Http.get
       { url = "https://www.googleapis.com/webfonts/v1/webfonts?sort=popularity&key=AIzaSyDXdgHuIP_D5ySRE5oA-Hd2qoZaaDBPCO4"
@@ -47,6 +48,7 @@ init _ =
 type Msg =
   FontsResponse (WebData Fonts)
   | MoreFonts
+  | TextInput String
 
 update msg model =
   case msg of
@@ -70,6 +72,11 @@ update msg model =
       , Cmd.none
       )
 
+    TextInput text ->
+      ( { model | text = if text == "" then defaultText else text }
+      , Cmd.none
+      )
+
 
 
 -- VIEW
@@ -86,6 +93,9 @@ view model =
       [text ("Error: " ++ Debug.toString err)]
     Success allFonts ->
       [ div [] (List.map link (groupsOf n model.visibleFonts))
+      , label [] [text "Text ", input [type_ "text", placeholder "Making the Web Beautiful!", onInput TextInput] []]
+      , br [] []
+      , br [] []
       , fontsView model.visibleFonts model.text
       , button [ onClick MoreFonts ] [ text "More" ]
       ]

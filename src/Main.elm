@@ -2,7 +2,7 @@ module Main exposing (..)
 
 import Html exposing (..)
 import Html.Attributes exposing (..)
-import Html.Events exposing (onClick, onInput)
+import Html.Events exposing (onClick, onInput, onSubmit)
 import Browser
 import RemoteData exposing (WebData, RemoteData(..))
 import Http exposing (expectJson)
@@ -139,7 +139,7 @@ update msg model =
 -- > Main.fontsForLink_ ["a","b"] ["c"]
 -- Just ["c"] : Maybe (List String)
 
-fontsToRequest : List String -> List String -> Maybe (List String)
+fontsToRequest : List String -> List String -> Maybe (List String) -- explain why this Maybe is necessary, all the way back to the links
 fontsToRequest fontsAlreadyRequested fontsNeeded =
   let
       i = List.filter (\result -> not (List.member result fontsAlreadyRequested)) fontsNeeded
@@ -178,11 +178,13 @@ view model =
                   , option [ Html.Attributes.value "40px", selected True ] [text "40px"]
                   ]
               ]
-          , label []
-            [ text " Font search "
-            , input [ type_ "search", onInput SearchInput ] []
-            , button [onClick Search] [text "Search"]
-            ]
+          , Html.form [ onSubmit Search ]
+              [ label []
+                [ text " Font search "
+                , input [ type_ "search", onInput SearchInput ] []
+                , button [type_ "submit"] [text "Search"]
+                ]
+              ]
           , br [] []
           , br [] []
           ] ++

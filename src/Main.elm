@@ -4,6 +4,8 @@ import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (onClick, onInput, onSubmit)
 import Browser
+import Browser.Dom as Dom
+import Task
 import RemoteData exposing (WebData, RemoteData(..))
 import Http exposing (expectJson)
 import List.Extra exposing (groupsOf)
@@ -62,8 +64,10 @@ type Msg =
   | SearchInput String
   | Search
   | Reset
+  | BackToTop
+  | NoOp
 
-update : Msg -> Model -> (Model, Cmd msg)
+update : Msg -> Model -> (Model, Cmd Msg)
 update msg model =
   case msg of
     FontsResponse response ->
@@ -144,6 +148,12 @@ update msg model =
         , Cmd.none
         )
 
+    BackToTop ->
+      (model, resetViewport)
+
+    NoOp ->
+      (model, Cmd.none)
+
 -- write a test: when there are no fonts to request over what's already been requested, just return the original fontsForLinks, not fontsForLinks with empty lists in it.
 -- > import Main
 -- > Main.fontsForLink_ ["a","b"] ["a"]
@@ -164,6 +174,10 @@ fontsToRequest fontsAlreadyRequested fontsNeeded =
 -- (write a test: when there are fonts to request over what's already been requested, only the fonts that haven't already been requested will be returned.)
 
 
+
+resetViewport : Cmd Msg
+resetViewport =
+    Task.perform (\_ -> NoOp) (Dom.setViewport 0 0)
 
 
 -- VIEW
@@ -214,7 +228,15 @@ view model =
                 [ div [] (List.map link model.fontsForLinks)
                 , fontsView model.searchResults (if model.sampleText == "" then defaultText else model.sampleText) model.fontSize
                 ]
-          )
+            )
+          ++
+            [ button
+              [ style "position" "fixed"
+              , style "bottom" "0"
+              , style "right" "0"
+              , onClick BackToTop
+              ]
+              [text "Back to top"]]
  }
 
 fontsView fonts text_ fontSize =

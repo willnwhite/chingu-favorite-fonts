@@ -19,7 +19,7 @@ type alias Model =
   , fontsForLinks : List (List String)
   , visibleFonts : Fonts
   , restOfFonts : Fonts
-  , text : String
+  , sampleText : String
   , fontSize : String
   , searchInput : String
   , searchResults : Fonts
@@ -30,6 +30,7 @@ type View = All | Results
 
 n = 8 -- number of fonts to get at a time
 defaultText = "Making the Web Beautiful!"
+defaultFontSize = "32px"
 
 init : () -> ( Model, Cmd Msg )
 init _ =
@@ -37,8 +38,8 @@ init _ =
     , fontsForLinks = [] -- fonts for each link element's href
     , visibleFonts = []
     , restOfFonts = []
-    , text = defaultText
-    , fontSize = "40px"
+    , sampleText = ""
+    , fontSize = defaultFontSize
     , searchInput = ""
     , searchResults = []
     , showAllOrResults = All
@@ -60,6 +61,7 @@ type Msg =
   | FontSize String
   | SearchInput String
   | Search
+  | Reset
 
 update : Msg -> Model -> (Model, Cmd msg)
 update msg model =
@@ -90,7 +92,7 @@ update msg model =
       )
 
     SampleText text ->
-      ( { model | text = if text == "" then defaultText else text }
+      ( { model | sampleText = text }
       , Cmd.none
       )
 
@@ -111,11 +113,12 @@ update msg model =
           ( { model | searchInput = input }, Cmd.none )
 
     Search ->
-      -- each time there's a new letter, there'll be a new link (with a new href (new set of fonts to request)). so it'll look like [["Font 1", "Font 2"], ["Font 3", "Font 4"]], with no duplication of fonts. each sublist will be for one link. the search will determine which fonts are needed. then we'll look at the fonts that have already been requested (perhaps by flattening the [[]] data structure for the existing links), take out any that have been, and stick the new-to-request fonts on the end of that [[]] structure. that [[]] needs to be maintained, else the links would change and you'd end up requesting things again.
+      -- each time there's a new search, there'll be a new link (with a new href (new set of fonts to request)). so it'll look like [["Font 1", "Font 2"], ["Font 3", "Font 4"]], with no duplication of fonts. each sublist will be for one link.
+      -- the search will determine which fonts are needed. then we'll look at the fonts that have already been requested (perhaps by flattening the [[]] data structure for the existing links), take out any that have been requested, and stick the new-to-request fonts on the end of that [[]] structure.
       case model.allFonts of
         Success allFonts ->
           let
-              searchResults = List.filter (.family >> String.contains model.searchInput) allFonts -- get the search string, look (filter?) for all the fonts in allFonts that match (contain the substring) (consider case sensitivity, punctuation, etc (maybe use a fuzzy library))
+              searchResults = List.filter (.family >> String.contains model.searchInput) allFonts -- look for all the fonts in allFonts that match (consider case sensitivity, punctuation, etc (maybe use a fuzzy library))
           in
           ( { model | searchResults = searchResults
             , fontsForLinks =
@@ -131,6 +134,15 @@ update msg model =
 
         _ ->
           (model, Cmd.none)
+
+    Reset ->
+        ( { model | showAllOrResults = All
+          , fontSize = defaultFontSize
+          , sampleText = ""
+          , searchInput = ""
+          }
+        , Cmd.none
+        )
 
 -- write a test: when there are no fonts to request over what's already been requested, just return the original fontsForLinks, not fontsForLinks with empty lists in it.
 -- > import Main
@@ -168,34 +180,39 @@ view model =
       [text ("Error: " ++ Debug.toString err)]
     Success allFonts ->
           [ div [] (List.map link ((groupsOf n << List.map .family) model.visibleFonts))
-          , label [] [text "Text ", input [type_ "text", placeholder "Making the Web Beautiful!", onInput SampleText] []]
+          , label [] [text "Text ", input [type_ "text", placeholder defaultText, onInput SampleText, value model.sampleText ] []]
           , label []
               [ text " Font size "
               , select [onInput FontSize]
-                  [ option [ Html.Attributes.value "20px" ] [text "20px"]
-                  , option [ Html.Attributes.value "24px"] [text "24px"]
-                  , option [ Html.Attributes.value "32px"] [text "32px"]
-                  , option [ Html.Attributes.value "40px", selected True ] [text "40px"]
-                  ]
+                  (List.map (\size ->
+                    option
+                      [ Html.Attributes.value size
+                      , selected (size == model.fontSize)
+                      ]
+                      [ text size ]
+                    )
+                    [ "20px", "24px", "32px", "40px" ] -- sizes
+                  )
               ]
           , Html.form [ onSubmit Search ]
               [ label []
                 [ text " Font search "
-                , input [ type_ "search", onInput SearchInput ] []
+                , input [ type_ "search", onInput SearchInput, value model.searchInput ] []
                 , button [type_ "submit"] [text "Search"]
                 ]
               ]
+          , button [ onClick Reset ] [text "Reset"]
           , br [] []
           , br [] []
           ] ++
             (case model.showAllOrResults of
               All ->
-                [ fontsView model.visibleFonts model.text model.fontSize
+                [ fontsView model.visibleFonts (if model.sampleText == "" then defaultText else model.sampleText) model.fontSize
                 , button [ onClick MoreFonts ] [ text "More" ]
                 ]
               Results ->
                 [ div [] (List.map link model.fontsForLinks)
-                , fontsView model.searchResults model.text model.fontSize
+                , fontsView model.searchResults (if model.sampleText == "" then defaultText else model.sampleText) model.fontSize
                 ]
           )
  }

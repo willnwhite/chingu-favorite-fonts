@@ -4,13 +4,14 @@ import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (onClick, onInput, onSubmit)
 import Browser
-import Browser.Dom as Dom
+import Browser.Dom
 import Task
 import RemoteData exposing (WebData, RemoteData(..))
 import Http exposing (expectJson)
 import List.Extra exposing (groupsOf)
+import Url.Builder exposing (string) -- encodes URLs
 
-import Fonts exposing (..)
+import Fonts exposing (Font, Fonts)
 
 
 
@@ -28,7 +29,7 @@ type alias Model =
   , showAllOrResults : View
   } -- perhaps refactor so that everything dependent on the list of fonts being fetched successfully is part of fonts -- same for searchResults: it should only exist if there's a search (not "")
 
-type View = All | Results
+type View = All | SearchResults
 
 n = 8 -- number of fonts to get at a time
 defaultText = "Making the Web Beautiful!"
@@ -47,9 +48,13 @@ init _ =
     , showAllOrResults = All
     }
   , Http.get
-      { url = "https://www.googleapis.com/webfonts/v1/webfonts?sort=popularity&key=AIzaSyDXdgHuIP_D5ySRE5oA-Hd2qoZaaDBPCO4"
-      , expect = expectJson (RemoteData.fromResult >> FontsResponse) decodeFonts
-      } -- fetch fonts from Google
+      -- get a list of the font families currently available
+      { url =
+          -- https://www.googleapis.com/webfonts/v1/webfonts?sort=popularity&key=AIzaSyDXdgHuIP_D5ySRE5oA-Hd2qoZaaDBPCO4
+          Url.Builder.crossOrigin "https://www.googleapis.com" ["webfonts", "v1", "webfonts"] [string "sort" "popularity", string "key" "AIzaSyDXdgHuIP_D5ySRE5oA-Hd2qoZaaDBPCO4"]
+      , expect =
+          expectJson (RemoteData.fromResult >> FontsResponse) Fonts.decodeFonts
+      }
   )
 
 
@@ -122,19 +127,19 @@ update msg model =
       case model.allFonts of
         Success allFonts ->
           let
-              searchResults = List.filter (.family >> String.contains model.searchInput) allFonts -- look for all the fonts in allFonts that match (consider case sensitivity, punctuation, etc (maybe use a fuzzy library))
+            searchResults = List.filter (.family >> String.contains model.searchInput) allFonts -- look for all the fonts in allFonts that match (consider case sensitivity, punctuation, etc (maybe use a fuzzy library))
           in
-          ( { model | searchResults = searchResults
-            , fontsForLinks =
-                case fontsToRequest (List.concat model.fontsForLinks) (List.map .family searchResults) of
-                  Just fontsForLink ->
-                    model.fontsForLinks ++ [fontsForLink] -- there will be duplication here but it might not be a problem (slow things down)
-                  Nothing ->
-                    model.fontsForLinks
-            , showAllOrResults = Results
-            }
-          , Cmd.none
-          )
+            ( { model | searchResults = searchResults
+              , fontsForLinks =
+                  case fontsToRequest (List.concat model.fontsForLinks) (List.map .family searchResults) of
+                    Just fontsForLink ->
+                      model.fontsForLinks ++ [fontsForLink] -- there will be duplication here but it might not be a problem (slow things down)
+                    Nothing ->
+                      model.fontsForLinks
+              , showAllOrResults = SearchResults
+              }
+            , Cmd.none
+            )
 
         _ ->
           (model, Cmd.none)
@@ -149,16 +154,21 @@ update msg model =
         )
 
     BackToTop ->
-      (model, resetViewport)
+      let
+        resetViewport : Cmd Msg
+        resetViewport =
+            Task.perform (\_ -> NoOp) (Browser.Dom.setViewport 0 0)
+      in
+        ( model, resetViewport )
 
     NoOp ->
       (model, Cmd.none)
 
--- write a test: when there are no fonts to request over what's already been requested, just return the original fontsForLinks, not fontsForLinks with empty lists in it.
+-- test: when there are no fonts to request over what's already been requested, just return the original fontsForLinks, not fontsForLinks with empty lists in it.
 -- > import Main
--- > Main.fontsForLink_ ["a","b"] ["a"]
+-- > Main.fontsToRequest ["a","b"] ["a"]
 -- Nothing : Maybe (List String)
--- > Main.fontsForLink_ ["a","b"] ["c"]
+-- > Main.fontsToRequest ["a","b"] ["c"]
 -- Just ["c"] : Maybe (List String)
 
 fontsToRequest : List String -> List String -> Maybe (List String) -- explain why this Maybe is necessary, all the way back to the links
@@ -175,76 +185,77 @@ fontsToRequest fontsAlreadyRequested fontsNeeded =
 
 
 
-resetViewport : Cmd Msg
-resetViewport =
-    Task.perform (\_ -> NoOp) (Dom.setViewport 0 0)
-
-
 -- VIEW
 
 view : Model -> Browser.Document Msg
 view model =
   { title = "Favorite Fonts"
-  , body = case model.allFonts of
-    NotAsked ->
-      [text "Initialising"]
-    Loading ->
-      [text "Loading"]
-    RemoteData.Failure err ->
-      [text ("Error: " ++ Debug.toString err)]
-    Success allFonts ->
-          [ div [] (List.map link ((groupsOf n << List.map .family) model.visibleFonts))
-          , label [] [text "Text ", input [type_ "text", placeholder defaultText, onInput SampleText, value model.sampleText ] []]
-          , label []
-              [ text " Font size "
-              , select [onInput FontSize]
-                  (List.map (\size ->
-                    option
-                      [ Html.Attributes.value size
-                      , selected (size == model.fontSize)
+  , body =
+      [ case model.allFonts of
+          NotAsked ->
+            text "Initialising"
+          Loading ->
+            text "Loading"
+          RemoteData.Failure err ->
+            text ("Error: " ++ Debug.toString err)
+          Success allFonts ->
+            main_ []
+              ( [ div [] (List.map stylesheetLink ((groupsOf n << List.map .family) model.visibleFonts))
+                , label [] [text "Text ", input [type_ "text", placeholder defaultText, onInput SampleText, value model.sampleText ] []]
+                , label []
+                    [ text " Font size "
+                    , select [onInput FontSize]
+                        (List.map (\size ->
+                          option
+                            [ Html.Attributes.value size
+                            , selected (size == model.fontSize)
+                            ]
+                            [ text size ]
+                          )
+                          [ "20px", "24px", "32px", "40px" ] -- sizes
+                        )
+                    ]
+                , Html.form [ onSubmit Search ]
+                    [ label []
+                      [ text " Font search "
+                      , input [ type_ "search", onInput SearchInput, value model.searchInput ] []
+                      , button [type_ "submit"] [text "Search"]
                       ]
-                      [ text size ]
-                    )
-                    [ "20px", "24px", "32px", "40px" ] -- sizes
-                  )
-              ]
-          , Html.form [ onSubmit Search ]
-              [ label []
-                [ text " Font search "
-                , input [ type_ "search", onInput SearchInput, value model.searchInput ] []
-                , button [type_ "submit"] [text "Search"]
+                    ]
+                , button [ onClick Reset ] [text "Reset"]
+                , br [] []
+                , br [] []
+                ] ++
+                  (case model.showAllOrResults of
+                    All ->
+                      [ fontsView model.visibleFonts (if model.sampleText == "" then defaultText else model.sampleText) model.fontSize
+                      , button [ onClick MoreFonts ] [ text "More" ]
+                      ]
+                    SearchResults ->
+                      [ div [] (List.map stylesheetLink model.fontsForLinks)
+                      , fontsView model.searchResults (if model.sampleText == "" then defaultText else model.sampleText) model.fontSize
+                      ]
+                )
+              ++
+                [ button
+                  [ style "position" "fixed"
+                  , style "bottom" "0"
+                  , style "right" "0"
+                  , onClick BackToTop
+                  ]
+                  [text "Back to top"]
                 ]
-              ]
-          , button [ onClick Reset ] [text "Reset"]
-          , br [] []
-          , br [] []
-          ] ++
-            (case model.showAllOrResults of
-              All ->
-                [ fontsView model.visibleFonts (if model.sampleText == "" then defaultText else model.sampleText) model.fontSize
-                , button [ onClick MoreFonts ] [ text "More" ]
-                ]
-              Results ->
-                [ div [] (List.map link model.fontsForLinks)
-                , fontsView model.searchResults (if model.sampleText == "" then defaultText else model.sampleText) model.fontSize
-                ]
-            )
-          ++
-            [ button
-              [ style "position" "fixed"
-              , style "bottom" "0"
-              , style "right" "0"
-              , onClick BackToTop
-              ]
-              [text "Back to top"]]
+              )
+      , footer [] [text "Made by Will White"]
+      ]
  }
 
 fontsView fonts text_ fontSize =
   div [] (List.map (fontView text_ fontSize) fonts)
 
 fontView text_ fontSize { family, category } =
-  div [] [
-    div [] [text family]
+  div []
+    [ div [] [text family]
     , div
         [ style "font-family" ("'" ++ family ++ "', " ++ category)
         , style "font-size" fontSize
@@ -253,15 +264,21 @@ fontView text_ fontSize { family, category } =
     , br [] []
   ]
 
-link : List String -> Html msg
-link fontFamilies =
+stylesheetLink : List String -> Html msg
+stylesheetLink fontFamilies =
   let
-      fontsJoined = List.foldl (\a b -> a ++ "|" ++ b) "" fontFamilies -- font families joined with | as per API -- at the moment, | is also added to the end. List.intersperse and/or String.fromList and/or String.join may be able to help.
+      fontRequestUrl =
+        Url.Builder.crossOrigin
+          -- https://fonts.googleapis.com/css?family=..."
+          "https://fonts.googleapis.com" ["css"] [Url.Builder.string "family" (familyUrlParameter fontFamilies)]
   in
-      Html.node "link"
-        [ rel "stylesheet"
-        , href ("https://fonts.googleapis.com/css?family=" ++ fontsJoined) -- TODO put +s between words and URL encode
-        ] []
+      -- <link rel="stylesheet" href="...">
+      Html.node "link" [ rel "stylesheet", href fontRequestUrl ] []
+
+familyUrlParameter : List String -> String
+familyUrlParameter =
+  -- ["Open Sans","Roboto"] -> "Open+Sans|Roboto"
+  List.map (String.replace " " "+") >> String.join "|"
 
 
 

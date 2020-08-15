@@ -1,4 +1,4 @@
-module Fonts exposing (..)
+module Fonts exposing (Fonts, Font, decodeFonts)
 
 import Json.Decode exposing (..)
 
@@ -10,6 +10,12 @@ type alias Font =
   }
 
 
+
+-- DECODERS
+
+-- JSON structure to decode:
+-- {"items": [{ "family": "Roboto", "category": "sans-serif", ... }], ...}
+
 decodeFonts : Decoder Fonts
 decodeFonts =
     at ["items"] (list decodeFont)
@@ -19,4 +25,3 @@ decodeFont =
   map2 Font
     (field "family" string)
     (field "category" string)
-  -- an object with "family" and "category" fields

@@ -268,6 +268,8 @@ fontView text_ fontSize { family, category } =
         , style "font-size" fontSize
         ]
         [text text_]
+    , button [] [text "Add"]
+    , br [] []
     , br [] []
   ]
 

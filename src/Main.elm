@@ -200,7 +200,14 @@ view model =
             text ("Error: " ++ Debug.toString err)
           Success allFonts ->
             main_ []
-              ( [ div [] (List.map stylesheetLink ((groupsOf n << List.map .family) model.visibleFonts))
+              ( [ nav []
+                  [ a [href "", style "margin" "0 1.5em 0"] [text "Catalog"]
+                  , a [href "", style "margin" "0 1.5em 0"] [text "Featured "]
+                  , a [href "", style "margin" "0 1.5em 0"] [text "Articles "]
+                  , a [href "", style "margin" "0 1.5em 0"] [text "About"]
+                  ]
+                , br [] []
+                , div [] (List.map stylesheetLink ((groupsOf n << List.map .family) model.visibleFonts))
                 , label [] [text "Text ", input [type_ "text", placeholder defaultText, onInput SampleText, value model.sampleText ] []]
                 , label []
                     [ text " Font size "
@@ -232,7 +239,7 @@ view model =
                       , button [ onClick MoreFonts ] [ text "More" ]
                       ]
                     SearchResults ->
-                      [ div [] (List.map stylesheetLink model.fontsForLinks)
+                      [ div [] (List.map stylesheetLink model.fontsForLinks) -- the fact that this isn't shared between both All and SearchResults could mean that it's being requested again each time SearchResults is toggled to.
                       , fontsView model.searchResults (if model.sampleText == "" then defaultText else model.sampleText) model.fontSize
                       ]
                 )

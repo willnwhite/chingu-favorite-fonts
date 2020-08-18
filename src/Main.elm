@@ -5,6 +5,7 @@ import Html.Attributes exposing (..)
 import Html.Events exposing (onClick, onInput, onSubmit)
 import Browser
 import Browser.Dom
+import Browser.Events
 import Task
 import RemoteData exposing (WebData, RemoteData(..))
 import Http exposing (expectJson)
@@ -24,9 +25,10 @@ type alias Model =
   , restOfFonts : Fonts
   , sampleText : String
   , fontSize : String
-  , searchInput : String
+  , searchString : String
   , searchResults : Fonts
   , showAllOrResults : View
+  -- , windowWidth : Int
   } -- perhaps refactor so that everything dependent on the list of fonts being fetched successfully is part of fonts -- same for searchResults: it should only exist if there's a search (not "")
 
 type View = All | SearchResults
@@ -36,16 +38,17 @@ defaultText = "Making the Web Beautiful!"
 defaultFontSize = "32px"
 
 init : () -> ( Model, Cmd Msg )
-init _ =
+init windowWidth =
   ( { allFonts = Loading
     , fontsForLinks = [] -- fonts for each link element's href
     , visibleFonts = []
     , restOfFonts = []
     , sampleText = ""
     , fontSize = defaultFontSize
-    , searchInput = ""
+    , searchString = ""
     , searchResults = []
     , showAllOrResults = All
+    -- , windowWidth = windowWidth
     }
   , Http.get
       -- get a list of the font families currently available
@@ -71,6 +74,7 @@ type Msg =
   | Reset
   | BackToTop
   | NoOp
+  | WindowResize Int Int
 
 update : Msg -> Model -> (Model, Cmd Msg)
 update msg model =
@@ -113,13 +117,13 @@ update msg model =
     SearchInput input ->
       case input of
         "" ->
-          ( { model | searchInput = input
+          ( { model | searchString = input
             , showAllOrResults = All
             }
           , Cmd.none
           )
         _ ->
-          ( { model | searchInput = input }, Cmd.none )
+          ( { model | searchString = input }, Cmd.none )
 
     Search ->
       -- each time there's a new search, there'll be a new link (with a new href (new set of fonts to request)). so it'll look like [["Font 1", "Font 2"], ["Font 3", "Font 4"]], with no duplication of fonts. each sublist will be for one link.
@@ -127,7 +131,7 @@ update msg model =
       case model.allFonts of
         Success allFonts ->
           let
-            searchResults = List.filter (.family >> String.contains model.searchInput) allFonts -- look for all the fonts in allFonts that match (consider case sensitivity, punctuation, etc (maybe use a fuzzy library))
+            searchResults = List.filter (.family >> String.contains model.searchString) allFonts -- look for all the fonts in allFonts that match (consider case sensitivity, punctuation, etc (maybe use a fuzzy library))
           in
             ( { model | searchResults = searchResults
               , fontsForLinks =
@@ -148,7 +152,7 @@ update msg model =
         ( { model | showAllOrResults = All
           , fontSize = defaultFontSize
           , sampleText = ""
-          , searchInput = ""
+          , searchString = ""
           }
         , Cmd.none
         )
@@ -162,6 +166,10 @@ update msg model =
         ( model, resetViewport )
 
     NoOp ->
+      (model, Cmd.none)
+
+    WindowResize width _ ->
+      -- ( { model | windowWidth = width }, Cmd.none)
       (model, Cmd.none)
 
 -- test: when there are no fonts to request over what's already been requested, just return the original fontsForLinks, not fontsForLinks with empty lists in it.
@@ -185,6 +193,13 @@ fontsToRequest fontsAlreadyRequested fontsNeeded =
 
 
 
+-- SUBSCRIPTIONS
+
+subscriptions model =
+  Browser.Events.onResize WindowResize
+
+
+
 -- VIEW
 
 view : Model -> Browser.Document Msg
@@ -199,78 +214,169 @@ view model =
           RemoteData.Failure err ->
             text ("Error: " ++ Debug.toString err)
           Success allFonts ->
-            main_ []
-              ( [ nav []
-                  [ a [href "", style "margin" "0 1.5em 0"] [text "Catalog"]
-                  , a [href "", style "margin" "0 1.5em 0"] [text "Featured "]
-                  , a [href "", style "margin" "0 1.5em 0"] [text "Articles "]
-                  , a [href "", style "margin" "0 1.5em 0"] [text "About"]
-                  ]
-                , br [] []
-                , div [] (List.map stylesheetLink ((groupsOf n << List.map .family) model.visibleFonts))
-                , label [] [text "Text ", input [type_ "text", placeholder defaultText, onInput SampleText, value model.sampleText ] []]
-                , label []
-                    [ text " Font size "
-                    , select [onInput FontSize]
-                        (List.map (\size ->
-                          option
-                            [ Html.Attributes.value size
-                            , selected (size == model.fontSize)
-                            ]
-                            [ text size ]
-                          )
-                          [ "20px", "24px", "32px", "40px" ] -- sizes
-                        )
+            div [ style "font-family" "sans-serif" ]
+              [ header {-model.windowWidth-}
+              , div [] (List.map stylesheetLink ((groupsOf n << List.map .family) model.visibleFonts))
+              , main_ []
+                  (
+                    majorNavigation {-windowWidth-} model.searchString model.sampleText model.fontSize
+                    ++
+                    (case model.showAllOrResults of
+                      All ->
+                        [ fontsView model.visibleFonts (if model.sampleText == "" then defaultText else model.sampleText) model.fontSize
+                        , button [ onClick MoreFonts ] [ text "More" ]
+                        ]
+                      SearchResults ->
+                        [ div [] (List.map stylesheetLink model.fontsForLinks) -- the fact that this isn't shared between both All and SearchResults could mean that it's being requested again each time SearchResults is toggled to.
+                        , fontsView model.searchResults (if model.sampleText == "" then defaultText else model.sampleText) model.fontSize
+                        ]
+                    )
+                    ++
+                    [ button
+                      [ style "position" "fixed"
+                      , style "bottom" "0"
+                      , style "right" "0"
+                      , onClick BackToTop
+                      ]
+                      [text "Back to top"]
                     ]
-                , Html.form [ onSubmit Search ]
-                    [ label []
-                      [ text " Font search "
-                      , input [ type_ "search", onInput SearchInput, value model.searchInput ] []
-                      , button [type_ "submit"] [text "Search"]
-                      ]
-                    ]
-                , button [ onClick Reset ] [text "Reset"]
-                , br [] []
-                , br [] []
-                ] ++
-                  (case model.showAllOrResults of
-                    All ->
-                      [ fontsView model.visibleFonts (if model.sampleText == "" then defaultText else model.sampleText) model.fontSize
-                      , button [ onClick MoreFonts ] [ text "More" ]
-                      ]
-                    SearchResults ->
-                      [ div [] (List.map stylesheetLink model.fontsForLinks) -- the fact that this isn't shared between both All and SearchResults could mean that it's being requested again each time SearchResults is toggled to.
-                      , fontsView model.searchResults (if model.sampleText == "" then defaultText else model.sampleText) model.fontSize
-                      ]
-                )
-              ++
-                [ button
-                  [ style "position" "fixed"
-                  , style "bottom" "0"
-                  , style "right" "0"
-                  , onClick BackToTop
-                  ]
-                  [text "Back to top"]
-                ]
-              )
-      , footer [] [text "Made by Will White"]
+                  )
+              , footer [style "text-align" "center"] [text "Made by Will White"]
+            ]
       ]
  }
 
+header {-windowWidth-} =
+  -- if windowWidth >= 657 then
+    wideHeader
+  -- else
+  --   narrowHeader
+
+wideHeader =
+  Html.header
+    [ style "display" "flex"
+    , style "justify-content" "space-between"
+    ]
+    [ h1 [] [ text "Favorite Fonts" ]
+    , nav
+      [ style "display" "flex"
+      , style "justify-content" "space-around"
+      , style "align-items" "center"
+      ]
+      [ a [href "", style "margin" "0 1.5em 0", style "text-decoration" "none"] [text "Catalog"]
+      , a [href "", style "margin" "0 1.5em 0", style "text-decoration" "none"] [text "Featured "]
+      , a [href "", style "margin" "0 1.5em 0", style "text-decoration" "none"] [text "Articles "]
+      , a [href "", style "margin" "0 1.5em 0", style "text-decoration" "none"] [text "About"]
+      ]
+    ]
+
+narrowHeader =
+  Html.header
+    []
+    [ h1 [] [ text "Favorite Fonts" ]
+    , nav
+        []
+        [ a [href "", style "margin" "0 1.5em 0", style "text-decoration" "none"] [text "Catalog"]
+        , a [href "", style "margin" "0 1.5em 0", style "text-decoration" "none"] [text "Featured "]
+        , a [href "", style "margin" "0 1.5em 0", style "text-decoration" "none"] [text "Articles "]
+        , a [href "", style "margin" "0 1.5em 0", style "text-decoration" "none"] [text "About"]
+        ]
+    ]
+
+majorNavigation {-windowWidth-} searchString sampleText fontSize =
+  -- if windowWidth >= 576 then
+    wideMajorNavigation searchString sampleText fontSize
+  -- else
+  --   narrowMajorNavigation searchString
+
+wideMajorNavigation searchString sampleText fontSize =
+  [ div
+      [ style "display" "flex"
+      , style "justify-content" "space-around"
+      , style "margin" "1.5em"
+      , style "border" "thin solid black"
+      , style "border-radius" "48px"
+      ]
+      [ searchInput searchString
+      , sampleTextInput sampleText
+      , sizeInput fontSize
+      , resetButton
+      ]
+  ]
+
+narrowMajorNavigation searchString =
+  [ div
+      [ style "display" "flex"
+      , style "justify-content" "space-around"
+      , style "margin" "1.5em"
+      , style "border" "thin solid black"
+      , style "border-radius" "48px"
+      ]
+      [ searchInput searchString
+      , resetButton
+      ]
+  ]
+
+sampleTextInput sampleText =
+  label []
+    [input
+      [ type_ "text", placeholder "Type something", onInput SampleText, value sampleText ] []
+    ]
+
+searchInput searchString =
+  Html.form [ onSubmit Search ]
+      [ label []
+        [ input [ type_ "search", onInput SearchInput, value searchString, placeholder "Search fonts" ] []
+        , button [type_ "submit"] [text "Search"]
+        ]
+      ]
+
+sizeInput fontSize =
+  label []
+      [ select [onInput FontSize]
+          (List.map (\size ->
+            option
+              [ Html.Attributes.value size
+              , selected (size == fontSize)
+              ]
+              [ text size ]
+            )
+            [ "20px", "24px", "32px", "40px" ] -- sizes
+          )
+      ]
+
+resetButton =
+  button [ onClick Reset ] [text "Reset"]
+
 fontsView fonts text_ fontSize =
-  div [] (List.map (fontView text_ fontSize) fonts)
+  div
+    [ style "display" "flex"
+    , style "flex-wrap" "wrap"
+    ]
+    (List.map (fontView text_ fontSize) fonts)
 
 fontView text_ fontSize { family, category } =
-  div []
-    [ div [] [text family]
+  div
+    [ style "border-top" "thin solid black"
+    -- , style "width" "20em"
+    , style "flex-grow" "1"
+    , style "flex-basis" "0" -- flex-basis: 0 achieves the best effect overall so far (pros: no text overlap between cards, all cards (on same row) are same width, cards grow; cons: cards on different rows aren't the same width as each other -- is this the difference between flexbox and grid?)
+    -- , style "max-width" "50%"
+    -- , style "min-width" "25%"
+    , style "margin" "1.5em"
+    ]
+    [ div
+      [ style "display" "flex", style "justify-content" "space-between"
+      , style "align-items" "flex-start" -- stops Add button stretching heightwise when font family text is over more than one line
+      ]
+      [ div [] [text family]
+      , button [] [text "Add"]
+      ]
     , div
         [ style "font-family" ("'" ++ family ++ "', " ++ category)
         , style "font-size" fontSize
         ]
         [text text_]
-    , button [] [text "Add"]
-    , br [] []
-    , br [] []
   ]
 
 stylesheetLink : List String -> Html msg
@@ -297,5 +403,5 @@ main = Browser.document
     { init = init
     , update = update
     , view = view
-    , subscriptions = \_ -> Sub.none
+    , subscriptions = subscriptions
     }

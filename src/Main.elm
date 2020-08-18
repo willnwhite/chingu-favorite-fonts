@@ -1,4 +1,4 @@
-module Main exposing (..)
+port module Main exposing (..)
 
 import Html exposing (..)
 import Html.Attributes exposing (..)
@@ -29,6 +29,7 @@ type alias Model =
   , searchResults : Fonts
   , showAllOrResults : View
   -- , windowWidth : Int
+  , scrollPosition : Float
   } -- perhaps refactor so that everything dependent on the list of fonts being fetched successfully is part of fonts -- same for searchResults: it should only exist if there's a search (not "")
 
 type View = All | SearchResults
@@ -49,6 +50,7 @@ init windowWidth =
     , searchResults = []
     , showAllOrResults = All
     -- , windowWidth = windowWidth
+    , scrollPosition = 0
     }
   , Http.get
       -- get a list of the font families currently available
@@ -59,6 +61,12 @@ init windowWidth =
           expectJson (RemoteData.fromResult >> FontsResponse) Fonts.decodeFonts
       }
   )
+
+
+
+-- PORTS
+
+port scroll : (() -> msg) -> Sub msg
 
 
 
@@ -75,6 +83,8 @@ type Msg =
   | BackToTop
   | NoOp
   | WindowResize Int Int
+  | Scroll ()
+  | Viewport Browser.Dom.Viewport
 
 update : Msg -> Model -> (Model, Cmd Msg)
 update msg model =
@@ -157,6 +167,14 @@ update msg model =
         , Cmd.none
         )
 
+    Scroll _ ->
+      -- get the viewport
+      ( model, Task.perform Viewport Browser.Dom.getViewport)
+
+    Viewport viewport ->
+      -- store the scroll position in the model
+      ( { model | scrollPosition = viewport.viewport.y }, Cmd.none)
+
     BackToTop ->
       let
         resetViewport : Cmd Msg
@@ -196,7 +214,7 @@ fontsToRequest fontsAlreadyRequested fontsNeeded =
 -- SUBSCRIPTIONS
 
 subscriptions model =
-  Browser.Events.onResize WindowResize
+  Sub.batch [scroll Scroll, Browser.Events.onResize WindowResize]
 
 
 
@@ -208,9 +226,9 @@ view model =
   , body =
       [ case model.allFonts of
           NotAsked ->
-            text "Initialising"
+            text "Initialising..."
           Loading ->
-            text "Loading"
+            text "Fetching up-to-date fonts..."
           RemoteData.Failure err ->
             text ("Error: " ++ Debug.toString err)
           Success allFonts ->
@@ -232,14 +250,14 @@ view model =
                         ]
                     )
                     ++
-                    [ button
+                    (if model.scrollPosition >= 3000 then [ button
                       [ style "position" "fixed"
                       , style "bottom" "0"
                       , style "right" "0"
                       , onClick BackToTop
                       ]
                       [text "Back to top"]
-                    ]
+                    ] else [])
                   )
               , footer [style "text-align" "center"] [text "Made by Will White"]
             ]

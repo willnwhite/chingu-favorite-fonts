@@ -350,19 +350,14 @@ resetButton =
 
 fontsView fonts text_ fontSize =
   div
-    [ style "display" "flex"
-    , style "flex-wrap" "wrap"
+    [ style "display" "grid"
+    , style "grid-template-columns" "repeat(auto-fit, minmax(300px, 1fr))"
     ]
     (List.map (fontView text_ fontSize) fonts)
 
 fontView text_ fontSize { family, category } =
   div
     [ style "border-top" "thin solid black"
-    -- , style "width" "20em"
-    , style "flex-grow" "1"
-    , style "flex-basis" "0" -- flex-basis: 0 achieves the best effect overall so far (pros: no text overlap between cards, all cards (on same row) are same width, cards grow; cons: cards on different rows aren't the same width as each other -- is this the difference between flexbox and grid?)
-    -- , style "max-width" "50%"
-    -- , style "min-width" "25%"
     , style "margin" "1.5em"
     ]
     [ div

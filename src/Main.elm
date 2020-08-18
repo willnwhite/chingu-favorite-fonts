@@ -28,7 +28,7 @@ type alias Model =
   , searchString : String
   , searchResults : Fonts
   , showAllOrResults : View
-  -- , windowWidth : Int
+  , windowWidth : Int
   , scrollPosition : Float
   } -- perhaps refactor so that everything dependent on the list of fonts being fetched successfully is part of fonts -- same for searchResults: it should only exist if there's a search (not "")
 
@@ -38,7 +38,7 @@ n = 8 -- number of fonts to get at a time
 defaultText = "Making the Web Beautiful!"
 defaultFontSize = "32px"
 
-init : () -> ( Model, Cmd Msg )
+init : Int -> ( Model, Cmd Msg )
 init windowWidth =
   ( { allFonts = Loading
     , fontsForLinks = [] -- fonts for each link element's href
@@ -49,7 +49,7 @@ init windowWidth =
     , searchString = ""
     , searchResults = []
     , showAllOrResults = All
-    -- , windowWidth = windowWidth
+    , windowWidth = windowWidth
     , scrollPosition = 0
     }
   , Http.get
@@ -168,11 +168,9 @@ update msg model =
         )
 
     Scroll _ ->
-      -- get the viewport
       ( model, Task.perform Viewport Browser.Dom.getViewport)
 
     Viewport viewport ->
-      -- store the scroll position in the model
       ( { model | scrollPosition = viewport.viewport.y }, Cmd.none)
 
     BackToTop ->
@@ -187,8 +185,7 @@ update msg model =
       (model, Cmd.none)
 
     WindowResize width _ ->
-      -- ( { model | windowWidth = width }, Cmd.none)
-      (model, Cmd.none)
+      ( { model | windowWidth = width }, Cmd.none)
 
 -- test: when there are no fonts to request over what's already been requested, just return the original fontsForLinks, not fontsForLinks with empty lists in it.
 -- > import Main
@@ -214,7 +211,10 @@ fontsToRequest fontsAlreadyRequested fontsNeeded =
 -- SUBSCRIPTIONS
 
 subscriptions model =
-  Sub.batch [scroll Scroll, Browser.Events.onResize WindowResize]
+  Sub.batch
+    [ scroll Scroll
+    , Browser.Events.onResize WindowResize
+    ]
 
 
 
@@ -233,11 +233,11 @@ view model =
             text ("Error: " ++ Debug.toString err)
           Success allFonts ->
             div [ style "font-family" "sans-serif" ]
-              [ header {-model.windowWidth-}
+              [ header model.windowWidth
               , div [] (List.map stylesheetLink ((groupsOf n << List.map .family) model.visibleFonts))
               , main_ []
                   (
-                    majorNavigation {-windowWidth-} model.searchString model.sampleText model.fontSize
+                    majorNavigation model.windowWidth model.searchString model.sampleText model.fontSize
                     ++
                     (case model.showAllOrResults of
                       All ->
@@ -250,25 +250,29 @@ view model =
                         ]
                     )
                     ++
-                    (if model.scrollPosition >= 3000 then [ button
-                      [ style "position" "fixed"
-                      , style "bottom" "0"
-                      , style "right" "0"
-                      , onClick BackToTop
+                    (if model.scrollPosition >= 3000 then -- 3000 is approx. 2 scrolls
+                      [ button
+                        [ style "position" "fixed"
+                        , style "bottom" "0"
+                        , style "right" "0"
+                        , onClick BackToTop
+                        ]
+                        [text "Back to top"]
                       ]
-                      [text "Back to top"]
-                    ] else [])
+                    else
+                      []
+                    )
                   )
               , footer [style "text-align" "center"] [text "Made by Will White"]
             ]
       ]
  }
 
-header {-windowWidth-} =
-  -- if windowWidth >= 657 then
+header windowWidth =
+  if windowWidth >= 657 then
     wideHeader
-  -- else
-  --   narrowHeader
+  else
+    narrowHeader
 
 wideHeader =
   Html.header
@@ -301,16 +305,17 @@ narrowHeader =
         ]
     ]
 
-majorNavigation {-windowWidth-} searchString sampleText fontSize =
-  -- if windowWidth >= 576 then
+majorNavigation windowWidth searchString sampleText fontSize =
+  if windowWidth >= (300 * 2 + 31) then -- hand-tuned to match fontsView
     wideMajorNavigation searchString sampleText fontSize
-  -- else
-  --   narrowMajorNavigation searchString
+  else
+    narrowMajorNavigation searchString
 
 wideMajorNavigation searchString sampleText fontSize =
   [ div
       [ style "display" "flex"
       , style "justify-content" "space-around"
+      , style "align-items" "flex-start"
       , style "margin" "1.5em"
       , style "border" "thin solid black"
       , style "border-radius" "48px"
@@ -326,6 +331,7 @@ narrowMajorNavigation searchString =
   [ div
       [ style "display" "flex"
       , style "justify-content" "space-around"
+      , style "align-items" "flex-start"
       , style "margin" "1.5em"
       , style "border" "thin solid black"
       , style "border-radius" "48px"
@@ -336,18 +342,18 @@ narrowMajorNavigation searchString =
   ]
 
 sampleTextInput sampleText =
-  label []
-    [input
-      [ type_ "text", placeholder "Type something", onInput SampleText, value sampleText ] []
-    ]
+  input
+    [ type_ "text"
+    , placeholder "Type something"
+    , onInput SampleText
+    , value sampleText
+    ] []
 
 searchInput searchString =
   Html.form [ onSubmit Search ]
-      [ label []
-        [ input [ type_ "search", onInput SearchInput, value searchString, placeholder "Search fonts" ] []
-        , button [type_ "submit"] [text "Search"]
-        ]
-      ]
+    [ input [ type_ "search", onInput SearchInput, value searchString, placeholder "Search fonts" ] []
+    , button [type_ "submit"] [text "Search"]
+    ]
 
 sizeInput fontSize =
   label []

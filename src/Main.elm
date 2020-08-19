@@ -235,14 +235,18 @@ view model =
             div [ style "font-family" "sans-serif" ]
               [ header model.windowWidth
               , div [] (List.map stylesheetLink ((groupsOf n << List.map .family) model.visibleFonts))
-              , main_ []
+              , main_ [ style "margin-bottom" "1.5em"]
                   (
                     majorNavigation model.windowWidth model.searchString model.sampleText model.fontSize
                     ++
                     (case model.showAllOrResults of
                       All ->
                         [ fontsView model.visibleFonts (if model.sampleText == "" then defaultText else model.sampleText) model.fontSize
-                        , button [ onClick MoreFonts ] [ text "More" ]
+                        , div
+                            [ style "text-align" "center"
+                            , style "margin-bottom" "3.5em" -- keeps contents above footer
+                            ]
+                            [ button [ onClick MoreFonts ] [ text "More fonts" ] ]
                         ]
                       SearchResults ->
                         [ div [] (List.map stylesheetLink model.fontsForLinks) -- the fact that this isn't shared between both All and SearchResults could mean that it's being requested again each time SearchResults is toggled to.
@@ -250,11 +254,11 @@ view model =
                         ]
                     )
                     ++
-                    (if model.scrollPosition >= 3000 then -- 3000 is approx. 2 scrolls
+                    (if model.scrollPosition >= 300 then
                       [ button
                         [ style "position" "fixed"
-                        , style "bottom" "0"
-                        , style "right" "0"
+                        , style "bottom" "5em"
+                        , style "right" "1.5em"
                         , onClick BackToTop
                         ]
                         [text "Back to top"]
@@ -263,13 +267,22 @@ view model =
                       []
                     )
                   )
-              , footer [style "text-align" "center"] [text "Made by Will White"]
+              , footer
+                  [ style "position" "fixed"
+                  , style "bottom" "0"
+                  , style "right" "0"
+                  , style "left" "0"
+                  , style "height" "2em"
+                  , style "background" "white"
+                  , style "padding-top" "1em"
+                  ]
+                  [ div [style "text-align" "center"] [text "Made by Will White"]]
             ]
       ]
  }
 
 header windowWidth =
-  if windowWidth >= 657 then
+  if windowWidth >= 720 then -- any less and "Catalog" comes too close to "Favorite Fonts"
     wideHeader
   else
     narrowHeader
@@ -278,6 +291,9 @@ wideHeader =
   Html.header
     [ style "display" "flex"
     , style "justify-content" "space-between"
+    , style "margin-left" "1.5em"
+    , style "margin-right" "1.5em"
+    , style "border-bottom" "thin solid gray"
     ]
     [ h1 [] [ text "Favorite Fonts" ]
     , nav
@@ -294,8 +310,13 @@ wideHeader =
 
 narrowHeader =
   Html.header
-    []
-    [ h1 [] [ text "Favorite Fonts" ]
+    [ style "margin-left" "1.5em"
+    , style "margin-right" "1.5em"
+    , style "border-bottom" "thin solid gray"
+    , style "padding-bottom" "1.5em" ]
+    [ h1
+        [ style "margin-top" "29px" -- hand-tuned to match text in wide header
+        ] [ text "Favorite Fonts" ]
     , nav
         []
         [ a [href "", style "margin" "0 1.5em 0", style "text-decoration" "none"] [text "Catalog"]
@@ -314,15 +335,18 @@ majorNavigation windowWidth searchString sampleText fontSize =
 wideMajorNavigation searchString sampleText fontSize =
   [ div
       [ style "display" "flex"
-      , style "justify-content" "space-around"
-      , style "align-items" "flex-start"
+      , style "justify-content" "space-between"
+      , style "align-items" "center"
       , style "margin" "1.5em"
+      , style "padding" "5px 10px"
       , style "border" "thin solid black"
       , style "border-radius" "48px"
       ]
       [ searchInput searchString
+      , div [ style "width" "10px" ] [] -- spacing between inputs
       , sampleTextInput sampleText
       , sizeInput fontSize
+      , div [ style "width" "10px" ] [] -- spacing
       , resetButton
       ]
   ]
@@ -330,13 +354,15 @@ wideMajorNavigation searchString sampleText fontSize =
 narrowMajorNavigation searchString =
   [ div
       [ style "display" "flex"
-      , style "justify-content" "space-around"
-      , style "align-items" "flex-start"
+      , style "justify-content" "space-between"
+      , style "align-items" "center"
       , style "margin" "1.5em"
+      , style "padding" "5px 10px"
       , style "border" "thin solid black"
       , style "border-radius" "48px"
       ]
       [ searchInput searchString
+      , div [ style "width" "10px" ] [] -- spacing
       , resetButton
       ]
   ]
@@ -344,14 +370,23 @@ narrowMajorNavigation searchString =
 sampleTextInput sampleText =
   input
     [ type_ "text"
-    , placeholder "Type something"
+    , placeholder "Sample text"
     , onInput SampleText
     , value sampleText
+    , style "border" "none"
+    , style "flex-grow" "1"
     ] []
 
 searchInput searchString =
-  Html.form [ onSubmit Search ]
-    [ input [ type_ "search", onInput SearchInput, value searchString, placeholder "Search fonts" ] []
+  Html.form [ onSubmit Search, style "margin-block-end" "0", style "flex-grow" "1", style "display" "flex", style "justify-content" "space-between" ]
+    [ input
+      [ type_ "text" -- using text, not search, so that "border: none" has an effect
+      , onInput SearchInput
+      , value searchString
+      , placeholder "Search fonts"
+      , style "border" "none"
+      , style "flex-grow" "1"
+      ] []
     , button [type_ "submit"] [text "Search"]
     ]
 
@@ -383,6 +418,7 @@ fontView text_ fontSize { family, category } =
   div
     [ style "border-top" "thin solid black"
     , style "margin" "1.5em"
+    , style "padding-top" "0.5em"
     ]
     [ div
       [ style "display" "flex", style "justify-content" "space-between"

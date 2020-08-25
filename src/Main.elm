@@ -66,7 +66,10 @@ init windowWidth =
 
 -- PORTS
 
-port scroll : (() -> msg) -> Sub msg
+type alias Viewport =
+  { sceneHeight : Float, viewportHeight : Float, viewportY : Float }
+
+port scroll : (Viewport -> msg) -> Sub msg
 
 
 
@@ -83,8 +86,7 @@ type Msg =
   | BackToTop
   | NoOp
   | WindowResize Int Int
-  | Scroll ()
-  | Viewport Browser.Dom.Viewport
+  | Scroll Viewport
 
 update : Msg -> Model -> (Model, Cmd Msg)
 update msg model =
@@ -167,11 +169,17 @@ update msg model =
         , Cmd.none
         )
 
-    Scroll _ ->
-      ( model, Task.perform Viewport Browser.Dom.getViewport)
-
-    Viewport viewport ->
-      ( { model | scrollPosition = viewport.viewport.y }, Cmd.none)
+    Scroll { sceneHeight, viewportHeight, viewportY } ->
+      ( if viewportY + viewportHeight >= sceneHeight then -- at bottom of page
+            { model | visibleFonts = model.visibleFonts ++ List.take n model.restOfFonts
+            , restOfFonts = List.drop n model.restOfFonts
+            , fontsForLinks = model.fontsForLinks ++ [(List.take n >> List.map .family) model.restOfFonts]
+            , scrollPosition = viewportY
+            }
+          else
+            { model | scrollPosition = viewportY }
+      , Cmd.none
+      )
 
     BackToTop ->
       let
@@ -232,7 +240,7 @@ view model =
           RemoteData.Failure err ->
             text ("Error: " ++ Debug.toString err)
           Success allFonts ->
-            div [ style "font-family" "sans-serif" ]
+            div [ id "scroll", style "font-family" "sans-serif", style "overflow" "hidden" ]
               [ header model.windowWidth
               , div [] (List.map stylesheetLink ((groupsOf n << List.map .family) model.visibleFonts))
               , main_ [ style "margin-bottom" "1.5em"]
@@ -242,11 +250,6 @@ view model =
                     (case model.showAllOrResults of
                       All ->
                         [ fontsView model.visibleFonts (if model.sampleText == "" then defaultText else model.sampleText) model.fontSize
-                        , div
-                            [ style "text-align" "center"
-                            , style "margin-bottom" "3.5em" -- keeps contents above footer
-                            ]
-                            [ button [ onClick MoreFonts ] [ text "More fonts" ] ]
                         ]
                       SearchResults ->
                         [ div [] (List.map stylesheetLink model.fontsForLinks) -- the fact that this isn't shared between both All and SearchResults could mean that it's being requested again each time SearchResults is toggled to.

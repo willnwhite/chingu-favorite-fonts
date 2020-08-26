@@ -110,7 +110,6 @@ update msg model =
             , visibleFonts = List.take n fonts -- first n members of the list
             , fontsForLinks = model.fontsForLinks ++ [fontsForLink]
             }
-          -- , Cmd.none
           , getViewport ()
           -- model changed, view should be updated, now check whether we're at the bottom of the page or not (sceneHeight == viewportHeight) (port to JS).
           )
@@ -119,7 +118,7 @@ update msg model =
           ( { model | allFonts = response }, Cmd.none)
 
     GotViewport {sceneHeight, viewportHeight} ->
-      ( if Debug.log "scene" sceneHeight == Debug.log "viewport" viewportHeight then -- at bottom of page
+      ( if sceneHeight == viewportHeight then -- at bottom of page
           { model | visibleFonts = model.visibleFonts ++ List.take n model.restOfFonts
           , restOfFonts = List.drop n model.restOfFonts
           , fontsForLinks = model.fontsForLinks ++ [(List.take n >> List.map .family) model.restOfFonts]
@@ -134,7 +133,6 @@ update msg model =
         , restOfFonts = List.drop n model.restOfFonts
         , fontsForLinks = model.fontsForLinks ++ [(List.take n >> List.map .family) model.restOfFonts]
         }
-      -- , Cmd.none
       -- model changed, view updated, now check whether you're at the bottom of the page or not. if so, request more fonts. this will be useful if the user has a very tall screen, and loading more fonts hasn't yet filled the screen.
       , getViewport ()
       )
@@ -288,31 +286,19 @@ view model =
                     )
                     ++
                     (if model.scrollPosition >= 300 then
-                      [ button
-                        [ style "position" "fixed"
-                        , style "bottom" "5em"
-                        , style "right" "1.5em"
-                        , onClick BackToTop
-                        ]
-                        [text "Back to top"]
-                      ]
+                      [ backToTopButton ]
                     else
                       []
                     )
                   )
               , footer
-                  [ style "position" "fixed"
-                  , style "bottom" "0"
-                  , style "right" "0"
-                  , style "left" "0"
-                  , style "height" "2em"
-                  , style "background" "white"
-                  , style "padding-top" "1em"
-                  ]
-                  [ div [style "text-align" "center"] [text "Made by Will White"]]
             ]
       ]
  }
+
+
+
+-- HTML
 
 header windowWidth =
   if windowWidth >= 720 then -- any less and "Catalog" comes too close to "Favorite Fonts"
@@ -473,6 +459,31 @@ fontView text_ fontSize { family, category } =
         ]
         [text text_]
   ]
+
+backToTopButton =
+  button
+    [ style "position" "fixed"
+    , style "bottom" "5em"
+    , style "right" "1.5em"
+    , onClick BackToTop
+    ]
+    [text "Back to top"]
+
+footer =
+  Html.footer
+    [ style "position" "fixed"
+    , style "bottom" "0"
+    , style "right" "0"
+    , style "left" "0"
+    , style "height" "2em"
+    , style "background" "white"
+    , style "padding-top" "1em"
+    ]
+    [ div [style "text-align" "center"] [text "Made by Will White"]]
+
+
+
+-- STYLESHEET LINK
 
 stylesheetLink : List String -> Html msg
 stylesheetLink fontFamilies =

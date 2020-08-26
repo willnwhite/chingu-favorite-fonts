@@ -73,11 +73,12 @@ type alias Viewport =
   , viewportY : Float -- scrollTop
   }
 
-port scroll : (Viewport -> msg) -> Sub msg
+-- Browser.Dom.getViewport has an issue (https://github.com/elm/browser/issues/118). These ports are a stand-in.
 
 port getViewport : () -> Cmd msg
-port gotViewport : (Viewport -> msg) -> Sub msg
--- Browser.Dom.getViewport has an issue (https://github.com/elm/browser/issues/118). These ports are a stand-in.
+
+port viewport : (Viewport -> msg) -> Sub msg
+
 
 
 -- UPDATE
@@ -93,7 +94,6 @@ type Msg =
   | BackToTop
   | NoOp
   | WindowResize Int Int
-  | Scroll Viewport
   | GotViewport Viewport
 
 update : Msg -> Model -> (Model, Cmd Msg)
@@ -116,17 +116,6 @@ update msg model =
 
         _ ->
           ( { model | allFonts = response }, Cmd.none)
-
-    GotViewport {sceneHeight, viewportHeight} ->
-      ( if sceneHeight == viewportHeight then -- at bottom of page
-          { model | visibleFonts = model.visibleFonts ++ List.take n model.restOfFonts
-          , restOfFonts = List.drop n model.restOfFonts
-          , fontsForLinks = model.fontsForLinks ++ [(List.take n >> List.map .family) model.restOfFonts]
-          }
-        else
-          model
-      , Cmd.none
-      )
 
     MoreFonts ->
       ( { model | visibleFonts = model.visibleFonts ++ List.take n model.restOfFonts
@@ -190,7 +179,7 @@ update msg model =
         , Cmd.none
         )
 
-    Scroll { sceneHeight, viewportHeight, viewportY } ->
+    GotViewport { sceneHeight, viewportHeight, viewportY } ->
       ( case model.showAllOrResults of
           All ->
             if viewportY + viewportHeight >= sceneHeight then -- at bottom of page
@@ -247,9 +236,9 @@ fontsToRequest fontsAlreadyRequested fontsNeeded =
 
 subscriptions model =
   Sub.batch
-    [ scroll Scroll
+    [ viewport GotViewport
     , Browser.Events.onResize WindowResize
-    , gotViewport GotViewport
+    -- , gotViewport GotViewport
     ]
 
 

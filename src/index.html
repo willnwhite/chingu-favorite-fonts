@@ -8,20 +8,15 @@
   <script type="text/javascript">
     var app = Elm.Main.init({ flags: window.innerWidth });
 
-    window.addEventListener("scroll", function () {
-      app.ports.scroll.send({
-        viewportHeight: document.body.clientHeight,
-        sceneHeight: document.body.scrollHeight,
-        viewportY: document.body.scrollTop,
-      });
-    });
+    window.addEventListener("scroll", sendViewport);
+    app.ports.getViewport.subscribe(sendViewport);
 
-    app.ports.getViewport.subscribe(function () {
-      app.ports.gotViewport.send({
+    function sendViewport() {
+      app.ports.viewport.send({
         viewportHeight: document.body.clientHeight,
         sceneHeight: document.body.scrollHeight,
         viewportY: document.body.scrollTop,
       });
-    });
+    }
   </script>
 </html>

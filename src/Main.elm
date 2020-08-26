@@ -193,14 +193,20 @@ update msg model =
         )
 
     Scroll { sceneHeight, viewportHeight, viewportY } ->
-      ( if viewportY + viewportHeight >= sceneHeight then -- at bottom of page
-            { model | visibleFonts = model.visibleFonts ++ List.take n model.restOfFonts
-            , restOfFonts = List.drop n model.restOfFonts
-            , fontsForLinks = model.fontsForLinks ++ [(List.take n >> List.map .family) model.restOfFonts]
-            , scrollPosition = viewportY
-            }
-          else
-            { model | scrollPosition = viewportY }
+      ( case model.showAllOrResults of
+          All ->
+            if viewportY + viewportHeight >= sceneHeight then -- at bottom of page
+              { model | visibleFonts = model.visibleFonts ++ List.take n model.restOfFonts
+              , restOfFonts = List.drop n model.restOfFonts
+              , fontsForLinks = model.fontsForLinks ++ [(List.take n >> List.map .family) model.restOfFonts]
+              , scrollPosition = viewportY
+              }
+            else
+              { model | scrollPosition = viewportY }
+
+          SearchResults ->
+            model
+
       , Cmd.none
       )
 
@@ -470,14 +476,11 @@ fontView text_ fontSize { family, category } =
 
 stylesheetLink : List String -> Html msg
 stylesheetLink fontFamilies =
-  let
-      fontRequestUrl =
-        Url.Builder.crossOrigin
-          -- https://fonts.googleapis.com/css?family=..."
-          "https://fonts.googleapis.com" ["css"] [Url.Builder.string "family" (familyUrlParameter fontFamilies)]
-  in
-      -- <link rel="stylesheet" href="...">
-      Html.node "link" [ rel "stylesheet", href fontRequestUrl ] []
+  -- <link rel="stylesheet" href="...">
+  Html.node "link" [ rel "stylesheet", href (fontRequestUrl fontFamilies) ] []
+
+fontRequestUrl fontFamilies =
+  "https://fonts.googleapis.com/css?family=" ++ familyUrlParameter fontFamilies
 
 familyUrlParameter : List String -> String
 familyUrlParameter =

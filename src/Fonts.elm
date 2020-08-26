@@ -1,8 +1,6 @@
-module Fonts exposing (Fonts, Font, decodeFonts)
+module Fonts exposing (Font, decodeFonts)
 
 import Json.Decode exposing (..)
-
-type alias Fonts = List Font
 
 type alias Font =
   { family : String
@@ -16,7 +14,7 @@ type alias Font =
 -- JSON structure to decode:
 -- {"items": [{ "family": "Roboto", "category": "sans-serif", ... }], ...}
 
-decodeFonts : Decoder Fonts
+decodeFonts : Decoder (List Font)
 decodeFonts =
     at ["items"] (list decodeFont)
 

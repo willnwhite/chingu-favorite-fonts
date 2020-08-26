@@ -12,21 +12,21 @@ import Http exposing (expectJson)
 import List.Extra exposing (groupsOf)
 import Url.Builder exposing (string) -- encodes URLs
 
-import Fonts exposing (Font, Fonts)
+import Fonts exposing (Font)
 
 
 
 -- MODEL
 
 type alias Model =
-  { allFonts : WebData Fonts
+  { allFonts : WebData (List Font)
   , fontsForLinks : List (List String)
-  , visibleFonts : Fonts
-  , restOfFonts : Fonts
+  , visibleFonts : (List Font)
+  , restOfFonts : (List Font)
   , sampleText : String
   , fontSize : String
   , searchString : String
-  , searchResults : Fonts
+  , searchResults : (List Font)
   , showAllOrResults : View
   , windowWidth : Int
   , scrollPosition : Float
@@ -84,7 +84,7 @@ port viewport : (Viewport -> msg) -> Sub msg
 -- UPDATE
 
 type Msg =
-  FontsResponse (WebData Fonts)
+  FontsResponse (WebData (List Font))
   | MoreFonts
   | SampleText String
   | FontSize String

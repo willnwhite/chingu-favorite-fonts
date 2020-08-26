@@ -67,7 +67,7 @@ init windowWidth =
 -- PORTS
 
 type alias Viewport =
-  -- Elm Browser.Dom terminology / JS DOM terminology
+  -- Elm Browser.Dom terminology -- JS DOM terminology
   { sceneHeight : Float -- scrollHeight
   , viewportHeight : Float -- clientHeight
   , viewportY : Float -- scrollTop
@@ -137,6 +137,7 @@ update msg model =
       )
 
     SearchInput input ->
+      -- TODO refactor (showAllOrResults = case input of...)
       case input of
         "" ->
           ( { model | searchString = input
@@ -153,7 +154,7 @@ update msg model =
       case model.allFonts of
         Success allFonts ->
           let
-            searchResults = List.filter (.family >> String.contains model.searchString) allFonts -- look for all the fonts in allFonts that match (consider case sensitivity, punctuation, etc (maybe use a fuzzy library))
+            searchResults = List.filter (.family >> String.toLower >> String.contains (String.toLower model.searchString)) allFonts
           in
             ( { model | searchResults = searchResults
               , fontsForLinks =

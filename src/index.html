@@ -15,5 +15,13 @@
         viewportY: document.body.scrollTop,
       });
     });
+
+    app.ports.getViewport.subscribe(function () {
+      app.ports.gotViewport.send({
+        viewportHeight: document.body.clientHeight,
+        sceneHeight: document.body.scrollHeight,
+        viewportY: document.body.scrollTop,
+      });
+    });
   </script>
 </html>

@@ -67,10 +67,17 @@ init windowWidth =
 -- PORTS
 
 type alias Viewport =
-  { sceneHeight : Float, viewportHeight : Float, viewportY : Float }
+  -- Elm Browser.Dom terminology / JS DOM terminology
+  { sceneHeight : Float -- scrollHeight
+  , viewportHeight : Float -- clientHeight
+  , viewportY : Float -- scrollTop
+  }
 
 port scroll : (Viewport -> msg) -> Sub msg
 
+port getViewport : () -> Cmd msg
+port gotViewport : (Viewport -> msg) -> Sub msg
+-- Browser.Dom.getViewport has an issue (https://github.com/elm/browser/issues/118). These ports are a stand-in.
 
 
 -- UPDATE
@@ -87,6 +94,7 @@ type Msg =
   | NoOp
   | WindowResize Int Int
   | Scroll Viewport
+  | GotViewport Viewport
 
 update : Msg -> Model -> (Model, Cmd Msg)
 update msg model =
@@ -102,18 +110,33 @@ update msg model =
             , visibleFonts = List.take n fonts -- first n members of the list
             , fontsForLinks = model.fontsForLinks ++ [fontsForLink]
             }
-          , Cmd.none
+          -- , Cmd.none
+          , getViewport ()
+          -- model changed, view should be updated, now check whether we're at the bottom of the page or not (sceneHeight == viewportHeight) (port to JS).
           )
 
         _ ->
           ( { model | allFonts = response }, Cmd.none)
+
+    GotViewport {sceneHeight, viewportHeight} ->
+      ( if Debug.log "scene" sceneHeight == Debug.log "viewport" viewportHeight then -- at bottom of page
+          { model | visibleFonts = model.visibleFonts ++ List.take n model.restOfFonts
+          , restOfFonts = List.drop n model.restOfFonts
+          , fontsForLinks = model.fontsForLinks ++ [(List.take n >> List.map .family) model.restOfFonts]
+          }
+        else
+          model
+      , Cmd.none
+      )
 
     MoreFonts ->
       ( { model | visibleFonts = model.visibleFonts ++ List.take n model.restOfFonts
         , restOfFonts = List.drop n model.restOfFonts
         , fontsForLinks = model.fontsForLinks ++ [(List.take n >> List.map .family) model.restOfFonts]
         }
-      , Cmd.none
+      -- , Cmd.none
+      -- model changed, view updated, now check whether you're at the bottom of the page or not. if so, request more fonts. this will be useful if the user has a very tall screen, and loading more fonts hasn't yet filled the screen.
+      , getViewport ()
       )
 
     SampleText text ->
@@ -222,6 +245,7 @@ subscriptions model =
   Sub.batch
     [ scroll Scroll
     , Browser.Events.onResize WindowResize
+    , gotViewport GotViewport
     ]
 
 
@@ -346,7 +370,14 @@ wideMajorNavigation searchString sampleText fontSize =
       , style "border-radius" "48px"
       ]
       [ searchInput searchString
-      , div [ style "width" "10px" ] [] -- spacing between inputs
+      , div [ style "width" "10px"
+            , style "height" "20px"
+            , style "border-right" "thin solid black"
+            ] [] -- spacing between inputs
+      , div [ style "width" "10px"
+            , style "height" "20px"
+            -- , style "border-left" "thin solid black"
+            ] [] -- spacing between inputs
       , sampleTextInput sampleText
       , sizeInput fontSize
       , div [ style "width" "10px" ] [] -- spacing

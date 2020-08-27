@@ -106,7 +106,6 @@ port viewport : (Viewport -> msg) -> Sub msg
 
 type Msg =
   FontsResponse (WebData (List Font))
-  -- | MoreFonts
   | SampleText String
   | FontSize String
   | SearchInput String
@@ -122,17 +121,6 @@ update msg model =
   case model.availableFonts of
     Success fonts ->
       case msg of
-        -- MoreFonts ->
-        --   ( { model |
-        --     -- visibleFonts = model.visibleFonts ++ List.take fontsPerRequest model.restOfFonts
-        --     visibleFonts = model.visibleFonts + fontsPerRequest
-        --     -- , restOfFonts = List.drop fontsPerRequest model.restOfFonts
-        --     , requestedFonts = RequestedFonts.update model.requestedFonts ((List.take fontsPerRequest >> List.map .family) model.restOfFonts)
-        --     }
-        --   -- model changed, view updated, now check whether you're at the bottom of the page or not. if so, request more fonts. this will be useful if the user has a very tall screen, and loading more fonts hasn't yet filled the screen.
-        --   , getViewport ()
-        --   )
-
         GotViewport { sceneHeight, viewportHeight, viewportY } ->
           -- if we're at the bottom of the page, request some more fonts
           ( case model.showAllOrResults of

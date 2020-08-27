@@ -32,9 +32,9 @@ type alias Model =
     <link href="...FontA|FontB|FontC">
     <link href="...FontD|FontE">
   -}
+  -- This detail is hidden behind the RequestedFonts type.
 
-  -- TODO visibleFonts + restOfFonts is a duplication of availableFonts. more memory efficient to store an Int representing how far down the availableFonts list we are. This Int could either be part of availableFonts' type, or stored separately to reflect the fact that it's an optimisation. Or, this fact could just be documented in availableFonts' type, which would be even more memory efficient! Do that once you've got the former, simpler thing working. The trouble with the simpler thing is that you have to remember to update both availableFonts and the Int at the same time.
-  , visibleFonts : Int
+  , visibleFonts : Int -- an Int representing how far down the availableFonts list we are. The trouble is that you have to remember to update both availableFonts and the Int at the same time. TODO This Int could be part of availableFonts' type. To reflect the fact that it's an optimisation, this fact could be documented in availableFonts' type!
 
   -- and possibly, the font requests could be stored in availableFonts' type: (requested : Bool in the Font type), and groupings stored in availableFonts' type:
   -- availableFonts : { requested : List (List Font), unrequested : List Font }
@@ -54,7 +54,7 @@ type View = All | SearchResults
 
 -- type VisibleFonts = VisibleFonts (List Font) Int
 
-fontsPerRequest = 8 -- number of fonts to get at a time
+fontsPerRequest = 8
 defaultText = "Making the Web Beautiful!"
 defaultFontSize = "32px"
 apiKey = "AIzaSyDXdgHuIP_D5ySRE5oA-Hd2qoZaaDBPCO4"
@@ -63,8 +63,6 @@ init : Int -> ( Model, Cmd Msg )
 init windowWidth =
   ( { availableFonts = Loading
     , requestedFonts = []
-    -- , visibleFonts = []
-    -- , restOfFonts = []
     , visibleFonts = 0 -- or fontsPerRequest?
     , sampleText = ""
     , fontSize = defaultFontSize
@@ -131,9 +129,7 @@ update msg model =
                   in
 
                   { model |
-                  -- visibleFonts = model.visibleFonts ++ List.take fontsPerRequest model.restOfFonts
                   visibleFonts = model.visibleFonts + fontsPerRequest
-                  -- , restOfFonts = List.drop fontsPerRequest model.restOfFonts
                   , requestedFonts = RequestedFonts.update model.requestedFonts ((List.take fontsPerRequest >> List.map .family) restOfFonts)
                   , scrollPosition = viewportY
                   }
@@ -147,7 +143,6 @@ update msg model =
           )
 
         Search ->
-          -- the search will determine which fonts are needed. then we'll look at the fonts that have already been requested (perhaps by flattening the [[]] data structure for the existing links), take out any that have been requested, and stick the new-to-request fonts on the end of that [[]] structure.
           case model.availableFonts of
             Success availableFonts ->
               let
@@ -217,8 +212,6 @@ update msg model =
               in
               ( { model |
                 availableFonts = response
-                -- , restOfFonts = List.drop fontsPerRequest fonts -- members of the list after fontsPerRequest
-                -- , visibleFonts = List.take fontsPerRequest fonts -- first fontsPerRequest members of the list
                 , visibleFonts = model.visibleFonts + fontsPerRequest
                 , requestedFonts = RequestedFonts.update model.requestedFonts fontsToRequest
                 }
@@ -271,8 +264,7 @@ view model =
                         [ fontsView (visibleFonts fonts model.visibleFonts) (if model.sampleText == "" then defaultText else model.sampleText) model.fontSize
                         ]
                       SearchResults ->
-                        [ div [] (List.map stylesheetLink model.requestedFonts) -- the fact that this isn't shared between both All and SearchResults could mean that it's being requested again each time SearchResults is toggled to.
-                        , fontsView model.searchResults (if model.sampleText == "" then defaultText else model.sampleText) model.fontSize
+                        [ fontsView model.searchResults (if model.sampleText == "" then defaultText else model.sampleText) model.fontSize
                         ]
                     )
                     ++

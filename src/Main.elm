@@ -130,7 +130,7 @@ update msg model =
           )
 
         _ ->
-          ( { model | availableFonts = response }, Cmd.none)
+          ( { model | availableFonts = response }, Cmd.none )
 
     MoreFonts ->
       ( { model | visibleFonts = model.visibleFonts ++ List.take n model.restOfFonts
@@ -140,54 +140,6 @@ update msg model =
       -- model changed, view updated, now check whether you're at the bottom of the page or not. if so, request more fonts. this will be useful if the user has a very tall screen, and loading more fonts hasn't yet filled the screen.
       , getViewport ()
       )
-
-    SampleText text ->
-      ( { model | sampleText = text }
-      , Cmd.none
-      )
-
-    FontSize size ->
-      ( { model | fontSize = size }
-      , Cmd.none
-      )
-
-    SearchInput input ->
-      -- TODO refactor (showAllOrResults = case input of...)
-      case input of
-        "" ->
-          ( { model | searchString = input
-            , showAllOrResults = All
-            }
-          , Cmd.none
-          )
-        _ ->
-          ( { model | searchString = input }, Cmd.none )
-
-    Search ->
-      -- the search will determine which fonts are needed. then we'll look at the fonts that have already been requested (perhaps by flattening the [[]] data structure for the existing links), take out any that have been requested, and stick the new-to-request fonts on the end of that [[]] structure.
-      case model.availableFonts of
-        Success availableFonts ->
-          let
-            searchResults = List.filter (.family >> String.toLower >> String.contains (String.toLower model.searchString)) availableFonts
-          in
-            ( { model | searchResults = searchResults
-              , requestedFonts = RequestedFonts.update model.requestedFonts (List.map .family searchResults)
-              , showAllOrResults = SearchResults
-              }
-            , Cmd.none
-            )
-
-        _ ->
-          (model, Cmd.none)
-
-    Reset ->
-        ( { model | showAllOrResults = All
-          , fontSize = defaultFontSize
-          , sampleText = ""
-          , searchString = ""
-          }
-        , Cmd.none
-        )
 
     GotViewport { sceneHeight, viewportHeight, viewportY } ->
       -- if we're at the bottom of the page, request some more fonts
@@ -208,6 +160,50 @@ update msg model =
       , Cmd.none
       )
 
+    Search ->
+      -- the search will determine which fonts are needed. then we'll look at the fonts that have already been requested (perhaps by flattening the [[]] data structure for the existing links), take out any that have been requested, and stick the new-to-request fonts on the end of that [[]] structure.
+      case model.availableFonts of
+        Success availableFonts ->
+          let
+            searchResults = List.filter (.family >> String.toLower >> String.contains (String.toLower model.searchString)) availableFonts
+          in
+            ( { model | searchResults = searchResults
+              , requestedFonts = RequestedFonts.update model.requestedFonts (List.map .family searchResults)
+              , showAllOrResults = SearchResults
+              }
+            , Cmd.none
+            )
+
+        _ ->
+          ( model, Cmd.none )
+
+    SearchInput input ->
+      -- TODO refactor (showAllOrResults = case input of...)
+      case input of
+        "" ->
+          ( { model | searchString = input
+            , showAllOrResults = All
+            }
+          , Cmd.none
+          )
+        _ ->
+          ( { model | searchString = input }, Cmd.none )
+
+    SampleText text ->
+      ( { model | sampleText = text }, Cmd.none )
+
+    FontSize size ->
+      ( { model | fontSize = size }, Cmd.none )
+
+    Reset ->
+        ( { model | showAllOrResults = All
+          , fontSize = defaultFontSize
+          , sampleText = ""
+          , searchString = ""
+          }
+        , Cmd.none
+        )
+
     BackToTop ->
       let
         resetViewport : Cmd Msg
@@ -217,10 +213,10 @@ update msg model =
         ( model, resetViewport )
 
     NoOp ->
-      (model, Cmd.none)
+      ( model, Cmd.none )
 
     WindowResize width _ ->
-      ( { model | windowWidth = width }, Cmd.none)
+      ( { model | windowWidth = width }, Cmd.none )
 
 
 

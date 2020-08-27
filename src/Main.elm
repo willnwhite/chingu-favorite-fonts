@@ -13,21 +13,35 @@ import List.Extra exposing (groupsOf)
 import Url.Builder exposing (string) -- encodes URLs
 
 import Fonts exposing (Font)
+import RequestedFonts exposing (RequestedFonts)
 
 
 
 -- MODEL
 
 type alias Model =
-  { allFonts : WebData (List Font)
-  , fontsForLinks : List (List String)
-  , visibleFonts : (List Font)
-  , restOfFonts : (List Font)
-  , sampleText : String
-  , fontSize : String
-  , searchString : String
-  , searchResults : (List Font)
-  , showAllOrResults : View
+  { availableFonts : WebData (List Font) -- what fonts are available, from Google Fonts Developer API, sorted by popularity
+
+  -- Requesting all available fonts at once caused page load problem, isn't polite, and isn't necessary. On page load, request enough fonts that they fill the page, and more will be loaded when the user scrolls to the bottom.
+
+  -- if you get a font in a search result, that font shouldn't be "thrown in" to the sorted-by-popularity list, even if it's in the right place, because there's no guarantee there won't be fonts missing. Eg. sorted by popularity could show A, B, C, and search could return E. Now if you put E on the end of A, B, C, it looks like E is the next-most popular to C, when in fact that's D. Also, when D is loaded, E will jump down. you do, however, want to keep the links for any fonts the search has requested. that way, if any of the search results do pop up in the popularity list, they'll already have their stylesheets.
+
+  , requestedFonts : RequestedFonts -- The same font should not be requested more than once (via link href or however). This could happen if a font is in a search result but it's already in the sorted-by-popularity list (or vice versa). Storing which fonts have already been requested means we can avoid requesting the same one again.
+  -- RequestedFonts also records which fonts were requested together (multiple fonts can be requested per HTTP request). Each list of fonts goes to make up the HTTP request to request that list. If the HTTP request changes, then the DOM changes (because we're using link hrefs to request fonts), and if the DOM changes, the browser might re-request unnecessarily. Sure, a link with the same href might be served by the browser's cache, but that shouldn't be relied upon. Also, while working with link href, we'll have to assume that all requests are successful.
+  {-
+    <link href="...FontA|FontB|FontC">
+    <link href="...FontD|FontE">
+  -}
+
+  , visibleFonts : List Font -- picked off from availableFonts
+  , restOfFonts : List Font -- the subset of availableFonts that isn't in visibleFonts
+
+  , searchResults : List Font -- fonts that match the last search (subset of availableFonts)
+
+  , searchString : String -- what's typed into the Search field
+  , sampleText : String -- what's typed into the Sample text field
+  , fontSize : String -- the selected font size
+  , showAllOrResults : View -- necessary so that the view can choose between using searchResults and visibleFonts (all) as a data source
   , windowWidth : Int
   , scrollPosition : Float
   } -- perhaps refactor so that everything dependent on the list of fonts being fetched successfully is part of fonts -- same for searchResults: it should only exist if there's a search (not "")
@@ -37,11 +51,12 @@ type View = All | SearchResults
 n = 8 -- number of fonts to get at a time
 defaultText = "Making the Web Beautiful!"
 defaultFontSize = "32px"
+apiKey = "AIzaSyDXdgHuIP_D5ySRE5oA-Hd2qoZaaDBPCO4"
 
 init : Int -> ( Model, Cmd Msg )
 init windowWidth =
-  ( { allFonts = Loading
-    , fontsForLinks = [] -- fonts for each link element's href
+  ( { availableFonts = Loading
+    , requestedFonts = [] -- fonts for each link element's href
     , visibleFonts = []
     , restOfFonts = []
     , sampleText = ""
@@ -56,7 +71,7 @@ init windowWidth =
       -- get a list of the font families currently available
       { url =
           -- https://www.googleapis.com/webfonts/v1/webfonts?sort=popularity&key=AIzaSyDXdgHuIP_D5ySRE5oA-Hd2qoZaaDBPCO4
-          Url.Builder.crossOrigin "https://www.googleapis.com" ["webfonts", "v1", "webfonts"] [string "sort" "popularity", string "key" "AIzaSyDXdgHuIP_D5ySRE5oA-Hd2qoZaaDBPCO4"]
+          Url.Builder.crossOrigin "https://www.googleapis.com" ["webfonts", "v1", "webfonts"] [string "sort" "popularity", string "key" apiKey]
       , expect =
           expectJson (RemoteData.fromResult >> FontsResponse) Fonts.decodeFonts
       }
@@ -103,24 +118,24 @@ update msg model =
       case response of
         Success fonts ->
           let
-              fontsForLink = (List.take n >> List.map .family) fonts -- first n members of the list
+              fontsForLink = (List.take n >> List.map .family) fonts -- first n fonts
           in
-          ( { model | allFonts = response
+          ( { model | availableFonts = response
             , restOfFonts = List.drop n fonts -- members of the list after n
             , visibleFonts = List.take n fonts -- first n members of the list
-            , fontsForLinks = model.fontsForLinks ++ [fontsForLink]
+            , requestedFonts = RequestedFonts.update model.requestedFonts fontsForLink
             }
           , getViewport ()
-          -- model changed, view should be updated, now check whether we're at the bottom of the page or not (sceneHeight == viewportHeight) (port to JS).
+          -- now check whether we're at the bottom of the page or not
           )
 
         _ ->
-          ( { model | allFonts = response }, Cmd.none)
+          ( { model | availableFonts = response }, Cmd.none)
 
     MoreFonts ->
       ( { model | visibleFonts = model.visibleFonts ++ List.take n model.restOfFonts
         , restOfFonts = List.drop n model.restOfFonts
-        , fontsForLinks = model.fontsForLinks ++ [(List.take n >> List.map .family) model.restOfFonts]
+        , requestedFonts = RequestedFonts.update model.requestedFonts ((List.take n >> List.map .family) model.restOfFonts)
         }
       -- model changed, view updated, now check whether you're at the bottom of the page or not. if so, request more fonts. this will be useful if the user has a very tall screen, and loading more fonts hasn't yet filled the screen.
       , getViewport ()
@@ -151,18 +166,13 @@ update msg model =
     Search ->
       -- each time there's a new search, there'll be a new link (with a new href (new set of fonts to request)). so it'll look like [["Font 1", "Font 2"], ["Font 3", "Font 4"]], with no duplication of fonts. each sublist will be for one link.
       -- the search will determine which fonts are needed. then we'll look at the fonts that have already been requested (perhaps by flattening the [[]] data structure for the existing links), take out any that have been requested, and stick the new-to-request fonts on the end of that [[]] structure.
-      case model.allFonts of
-        Success allFonts ->
+      case model.availableFonts of
+        Success availableFonts ->
           let
-            searchResults = List.filter (.family >> String.toLower >> String.contains (String.toLower model.searchString)) allFonts
+            searchResults = List.filter (.family >> String.toLower >> String.contains (String.toLower model.searchString)) availableFonts
           in
             ( { model | searchResults = searchResults
-              , fontsForLinks =
-                  case fontsToRequest (List.concat model.fontsForLinks) (List.map .family searchResults) of
-                    Just fontsForLink ->
-                      model.fontsForLinks ++ [fontsForLink] -- there will be duplication here but it might not be a problem (slow things down)
-                    Nothing ->
-                      model.fontsForLinks
+              , requestedFonts = RequestedFonts.update model.requestedFonts (List.map .family searchResults)
               , showAllOrResults = SearchResults
               }
             , Cmd.none
@@ -181,12 +191,13 @@ update msg model =
         )
 
     GotViewport { sceneHeight, viewportHeight, viewportY } ->
+      -- if we're at the bottom of the page, request some more fonts
       ( case model.showAllOrResults of
           All ->
             if viewportY + viewportHeight >= sceneHeight then -- at bottom of page
               { model | visibleFonts = model.visibleFonts ++ List.take n model.restOfFonts
               , restOfFonts = List.drop n model.restOfFonts
-              , fontsForLinks = model.fontsForLinks ++ [(List.take n >> List.map .family) model.restOfFonts]
+              , requestedFonts = RequestedFonts.update model.requestedFonts ((List.take n >> List.map .family) model.restOfFonts)
               , scrollPosition = viewportY
               }
             else
@@ -219,16 +230,6 @@ update msg model =
 -- > Main.fontsToRequest ["a","b"] ["c"]
 -- Just ["c"] : Maybe (List String)
 
-fontsToRequest : List String -> List String -> Maybe (List String) -- explain why this Maybe is necessary, all the way back to the links
-fontsToRequest fontsAlreadyRequested fontsNeeded =
-  let
-      i = List.filter (\result -> not (List.member result fontsAlreadyRequested)) fontsNeeded
-  in
-      if List.isEmpty i then Nothing else Just i
-  -- filter out fonts needed that have already been requested.
-
-
-
 -- (write a test: when there are fonts to request over what's already been requested, only the fonts that haven't already been requested will be returned.)
 
 
@@ -250,14 +251,14 @@ view : Model -> Browser.Document Msg
 view model =
   { title = "Favorite Fonts"
   , body =
-      [ case model.allFonts of
+      [ case model.availableFonts of
           NotAsked ->
             text "Initialising..."
           Loading ->
             text "Fetching up-to-date fonts..."
           RemoteData.Failure err ->
             text ("Error: " ++ Debug.toString err)
-          Success allFonts ->
+          Success _ ->
             div [ id "scroll", style "font-family" "sans-serif", style "overflow" "hidden" ]
               [ header model.windowWidth
               , div [] (List.map stylesheetLink ((groupsOf n << List.map .family) model.visibleFonts))
@@ -270,7 +271,7 @@ view model =
                         [ fontsView model.visibleFonts (if model.sampleText == "" then defaultText else model.sampleText) model.fontSize
                         ]
                       SearchResults ->
-                        [ div [] (List.map stylesheetLink model.fontsForLinks) -- the fact that this isn't shared between both All and SearchResults could mean that it's being requested again each time SearchResults is toggled to.
+                        [ div [] (List.map stylesheetLink model.requestedFonts) -- the fact that this isn't shared between both All and SearchResults could mean that it's being requested again each time SearchResults is toggled to.
                         , fontsView model.searchResults (if model.sampleText == "" then defaultText else model.sampleText) model.fontSize
                         ]
                     )

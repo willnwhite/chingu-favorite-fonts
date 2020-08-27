@@ -164,7 +164,6 @@ update msg model =
           ( { model | searchString = input }, Cmd.none )
 
     Search ->
-      -- each time there's a new search, there'll be a new link (with a new href (new set of fonts to request)). so it'll look like [["Font 1", "Font 2"], ["Font 3", "Font 4"]], with no duplication of fonts. each sublist will be for one link.
       -- the search will determine which fonts are needed. then we'll look at the fonts that have already been requested (perhaps by flattening the [[]] data structure for the existing links), take out any that have been requested, and stick the new-to-request fonts on the end of that [[]] structure.
       case model.availableFonts of
         Success availableFonts ->
@@ -222,15 +221,6 @@ update msg model =
 
     WindowResize width _ ->
       ( { model | windowWidth = width }, Cmd.none)
-
--- test: when there are no fonts to request over what's already been requested, just return the original fontsForLinks, not fontsForLinks with empty lists in it.
--- > import Main
--- > Main.fontsToRequest ["a","b"] ["a"]
--- Nothing : Maybe (List String)
--- > Main.fontsToRequest ["a","b"] ["c"]
--- Just ["c"] : Maybe (List String)
-
--- (write a test: when there are fonts to request over what's already been requested, only the fonts that haven't already been requested will be returned.)
 
 
 

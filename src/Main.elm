@@ -33,8 +33,12 @@ type alias Model =
     <link href="...FontD|FontE">
   -}
 
-  , visibleFonts : List Font -- picked off from availableFonts
-  , restOfFonts : List Font -- the subset of availableFonts that isn't in visibleFonts
+  -- TODO visibleFonts + restOfFonts is a duplication of availableFonts. more memory efficient to store an Int representing how far down the availableFonts list we are. This Int could either be part of availableFonts' type, or stored separately to reflect the fact that it's an optimisation. Or, this fact could just be documented in availableFonts' type, which would be even more memory efficient! Do that once you've got the former, simpler thing working. The trouble with the simpler thing is that you have to remember to update both availableFonts and the Int at the same time.
+  , visibleFonts : Int
+
+  -- and possibly, the font requests could be stored in availableFonts' type: (requested : Bool in the Font type), and groupings stored in availableFonts' type:
+  -- availableFonts : { requested : List (List Font), unrequested : List Font }
+  -- no, because then when searched-for fonts get in requested, how do you keep a record of which sorted-by-popularity fonts should be visible?
 
   , searchResults : List Font -- fonts that match the last search (subset of availableFonts)
 
@@ -48,7 +52,9 @@ type alias Model =
 
 type View = All | SearchResults
 
-n = 8 -- number of fonts to get at a time
+-- type VisibleFonts = VisibleFonts (List Font) Int
+
+fontsPerRequest = 8 -- number of fonts to get at a time
 defaultText = "Making the Web Beautiful!"
 defaultFontSize = "32px"
 apiKey = "AIzaSyDXdgHuIP_D5ySRE5oA-Hd2qoZaaDBPCO4"
@@ -56,9 +62,10 @@ apiKey = "AIzaSyDXdgHuIP_D5ySRE5oA-Hd2qoZaaDBPCO4"
 init : Int -> ( Model, Cmd Msg )
 init windowWidth =
   ( { availableFonts = Loading
-    , requestedFonts = [] -- fonts for each link element's href
-    , visibleFonts = []
-    , restOfFonts = []
+    , requestedFonts = []
+    -- , visibleFonts = []
+    -- , restOfFonts = []
+    , visibleFonts = 0 -- or fontsPerRequest?
     , sampleText = ""
     , fontSize = defaultFontSize
     , searchString = ""
@@ -70,7 +77,7 @@ init windowWidth =
   , Http.get
       -- get a list of the font families currently available
       { url =
-          -- https://www.googleapis.com/webfonts/v1/webfonts?sort=popularity&key=AIzaSyDXdgHuIP_D5ySRE5oA-Hd2qoZaaDBPCO4
+          -- https://www.googleapis.com/webfonts/v1/webfonts?sort=popularity&key=...
           Url.Builder.crossOrigin "https://www.googleapis.com" ["webfonts", "v1", "webfonts"] [string "sort" "popularity", string "key" apiKey]
       , expect =
           expectJson (RemoteData.fromResult >> FontsResponse) Fonts.decodeFonts
@@ -82,10 +89,9 @@ init windowWidth =
 -- PORTS
 
 type alias Viewport =
-  -- Elm Browser.Dom terminology -- JS DOM terminology
-  { sceneHeight : Float -- scrollHeight
-  , viewportHeight : Float -- clientHeight
-  , viewportY : Float -- scrollTop
+  { sceneHeight : Float
+  , viewportHeight : Float
+  , viewportY : Float
   }
 
 -- Browser.Dom.getViewport has an issue (https://github.com/elm/browser/issues/118). These ports are a stand-in.
@@ -100,7 +106,7 @@ port viewport : (Viewport -> msg) -> Sub msg
 
 type Msg =
   FontsResponse (WebData (List Font))
-  | MoreFonts
+  -- | MoreFonts
   | SampleText String
   | FontSize String
   | SearchInput String
@@ -113,110 +119,130 @@ type Msg =
 
 update : Msg -> Model -> (Model, Cmd Msg)
 update msg model =
-  case msg of
-    FontsResponse response ->
-      case response of
-        Success fonts ->
-          let
-              fontsForLink = (List.take n >> List.map .family) fonts -- first n fonts
-          in
-          ( { model | availableFonts = response
-            , restOfFonts = List.drop n fonts -- members of the list after n
-            , visibleFonts = List.take n fonts -- first n members of the list
-            , requestedFonts = RequestedFonts.update model.requestedFonts fontsForLink
-            }
-          , getViewport ()
-          -- now check whether we're at the bottom of the page or not
+  case model.availableFonts of
+    Success fonts ->
+      case msg of
+        -- MoreFonts ->
+        --   ( { model |
+        --     -- visibleFonts = model.visibleFonts ++ List.take fontsPerRequest model.restOfFonts
+        --     visibleFonts = model.visibleFonts + fontsPerRequest
+        --     -- , restOfFonts = List.drop fontsPerRequest model.restOfFonts
+        --     , requestedFonts = RequestedFonts.update model.requestedFonts ((List.take fontsPerRequest >> List.map .family) model.restOfFonts)
+        --     }
+        --   -- model changed, view updated, now check whether you're at the bottom of the page or not. if so, request more fonts. this will be useful if the user has a very tall screen, and loading more fonts hasn't yet filled the screen.
+        --   , getViewport ()
+        --   )
+
+        GotViewport { sceneHeight, viewportHeight, viewportY } ->
+          -- if we're at the bottom of the page, request some more fonts
+          ( case model.showAllOrResults of
+              All ->
+                if viewportY + viewportHeight >= sceneHeight then -- at bottom of page
+                  let
+                      restOfFonts = List.drop model.visibleFonts fonts -- members of the list after fontsPerRequest
+                  in
+
+                  { model |
+                  -- visibleFonts = model.visibleFonts ++ List.take fontsPerRequest model.restOfFonts
+                  visibleFonts = model.visibleFonts + fontsPerRequest
+                  -- , restOfFonts = List.drop fontsPerRequest model.restOfFonts
+                  , requestedFonts = RequestedFonts.update model.requestedFonts ((List.take fontsPerRequest >> List.map .family) restOfFonts)
+                  , scrollPosition = viewportY
+                  }
+                else
+                  { model | scrollPosition = viewportY }
+
+              SearchResults ->
+                model
+
+          , Cmd.none
           )
 
-        _ ->
-          ( { model | availableFonts = response }, Cmd.none )
+        Search ->
+          -- the search will determine which fonts are needed. then we'll look at the fonts that have already been requested (perhaps by flattening the [[]] data structure for the existing links), take out any that have been requested, and stick the new-to-request fonts on the end of that [[]] structure.
+          case model.availableFonts of
+            Success availableFonts ->
+              let
+                searchResults = List.filter (.family >> String.toLower >> String.contains (String.toLower model.searchString)) availableFonts
+              in
+                ( { model | searchResults = searchResults
+                  , requestedFonts = RequestedFonts.update model.requestedFonts (List.map .family searchResults)
+                  , showAllOrResults = SearchResults
+                  }
+                , Cmd.none
+                )
 
-    MoreFonts ->
-      ( { model | visibleFonts = model.visibleFonts ++ List.take n model.restOfFonts
-        , restOfFonts = List.drop n model.restOfFonts
-        , requestedFonts = RequestedFonts.update model.requestedFonts ((List.take n >> List.map .family) model.restOfFonts)
-        }
-      -- model changed, view updated, now check whether you're at the bottom of the page or not. if so, request more fonts. this will be useful if the user has a very tall screen, and loading more fonts hasn't yet filled the screen.
-      , getViewport ()
-      )
+            _ ->
+              ( model, Cmd.none )
 
-    GotViewport { sceneHeight, viewportHeight, viewportY } ->
-      -- if we're at the bottom of the page, request some more fonts
-      ( case model.showAllOrResults of
-          All ->
-            if viewportY + viewportHeight >= sceneHeight then -- at bottom of page
-              { model | visibleFonts = model.visibleFonts ++ List.take n model.restOfFonts
-              , restOfFonts = List.drop n model.restOfFonts
-              , requestedFonts = RequestedFonts.update model.requestedFonts ((List.take n >> List.map .family) model.restOfFonts)
-              , scrollPosition = viewportY
-              }
-            else
-              { model | scrollPosition = viewportY }
+        SearchInput input ->
+          -- TODO refactor (showAllOrResults = case input of...)
+          case input of
+            "" ->
+              ( { model | searchString = input
+                , showAllOrResults = All
+                }
+              , Cmd.none
+              )
+            _ ->
+              ( { model | searchString = input }, Cmd.none )
 
-          SearchResults ->
-            model
+        SampleText text ->
+          ( { model | sampleText = text }, Cmd.none )
 
-      , Cmd.none
-      )
+        FontSize size ->
+          ( { model | fontSize = size }, Cmd.none )
 
-    Search ->
-      -- the search will determine which fonts are needed. then we'll look at the fonts that have already been requested (perhaps by flattening the [[]] data structure for the existing links), take out any that have been requested, and stick the new-to-request fonts on the end of that [[]] structure.
-      case model.availableFonts of
-        Success availableFonts ->
-          let
-            searchResults = List.filter (.family >> String.toLower >> String.contains (String.toLower model.searchString)) availableFonts
-          in
-            ( { model | searchResults = searchResults
-              , requestedFonts = RequestedFonts.update model.requestedFonts (List.map .family searchResults)
-              , showAllOrResults = SearchResults
+        Reset ->
+            ( { model | showAllOrResults = All
+              , fontSize = defaultFontSize
+              , sampleText = ""
+              , searchString = ""
               }
             , Cmd.none
             )
 
+        BackToTop ->
+          let
+            resetViewport : Cmd Msg
+            resetViewport =
+                Task.perform (\_ -> NoOp) (Browser.Dom.setViewport 0 0)
+          in
+            ( model, resetViewport )
+
+        NoOp ->
+          ( model, Cmd.none )
+
+        WindowResize width _ ->
+          ( { model | windowWidth = width }, Cmd.none )
+
         _ ->
           ( model, Cmd.none )
 
-    SearchInput input ->
-      -- TODO refactor (showAllOrResults = case input of...)
-      case input of
-        "" ->
-          ( { model | searchString = input
-            , showAllOrResults = All
-            }
-          , Cmd.none
-          )
+    _ ->
+      case msg of
+        FontsResponse response ->
+          case response of
+            Success fonts ->
+              let
+                  fontsToRequest = (List.take fontsPerRequest >> List.map .family) fonts -- first fontsPerRequest fonts
+              in
+              ( { model |
+                availableFonts = response
+                -- , restOfFonts = List.drop fontsPerRequest fonts -- members of the list after fontsPerRequest
+                -- , visibleFonts = List.take fontsPerRequest fonts -- first fontsPerRequest members of the list
+                , visibleFonts = model.visibleFonts + fontsPerRequest
+                , requestedFonts = RequestedFonts.update model.requestedFonts fontsToRequest
+                }
+              , getViewport ()
+              -- check whether we're at the bottom of the page or not
+              )
+
+            _ ->
+              ( { model | availableFonts = response }, Cmd.none )
+
         _ ->
-          ( { model | searchString = input }, Cmd.none )
-
-    SampleText text ->
-      ( { model | sampleText = text }, Cmd.none )
-
-    FontSize size ->
-      ( { model | fontSize = size }, Cmd.none )
-
-    Reset ->
-        ( { model | showAllOrResults = All
-          , fontSize = defaultFontSize
-          , sampleText = ""
-          , searchString = ""
-          }
-        , Cmd.none
-        )
-
-    BackToTop ->
-      let
-        resetViewport : Cmd Msg
-        resetViewport =
-            Task.perform (\_ -> NoOp) (Browser.Dom.setViewport 0 0)
-      in
-        ( model, resetViewport )
-
-    NoOp ->
-      ( model, Cmd.none )
-
-    WindowResize width _ ->
-      ( { model | windowWidth = width }, Cmd.none )
+          ( model, Cmd.none )
 
 
 
@@ -244,17 +270,17 @@ view model =
             text "Fetching up-to-date fonts..."
           RemoteData.Failure err ->
             text ("Error: " ++ Debug.toString err)
-          Success _ ->
+          Success fonts ->
             div [ id "scroll", style "font-family" "sans-serif", style "overflow" "hidden" ]
               [ header model.windowWidth
-              , div [] (List.map stylesheetLink ((groupsOf n << List.map .family) model.visibleFonts))
+              , div [] (List.map stylesheetLink model.requestedFonts)
               , main_ [ style "margin-bottom" "1.5em"]
                   (
                     majorNavigation model.windowWidth model.searchString model.sampleText model.fontSize
                     ++
                     (case model.showAllOrResults of
                       All ->
-                        [ fontsView model.visibleFonts (if model.sampleText == "" then defaultText else model.sampleText) model.fontSize
+                        [ fontsView (visibleFonts fonts model.visibleFonts) (if model.sampleText == "" then defaultText else model.sampleText) model.fontSize
                         ]
                       SearchResults ->
                         [ div [] (List.map stylesheetLink model.requestedFonts) -- the fact that this isn't shared between both All and SearchResults could mean that it's being requested again each time SearchResults is toggled to.
@@ -272,6 +298,9 @@ view model =
             ]
       ]
  }
+
+visibleFonts fonts n =
+  List.take n fonts
 
 
 
@@ -410,6 +439,7 @@ sizeInput fontSize =
 resetButton =
   button [ onClick Reset ] [text "Reset"]
 
+fontsView : List Font -> String -> String -> Html msg
 fontsView fonts text_ fontSize =
   div
     [ style "display" "grid"

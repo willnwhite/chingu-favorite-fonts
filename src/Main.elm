@@ -1,7 +1,5 @@
 port module Main exposing (..)
 
--- encodes URLs
-
 import Browser
 import Browser.Dom
 import Browser.Events
@@ -22,10 +20,17 @@ import Url.Builder exposing (string)
 
 
 type alias Model =
+    -- there's a split between All and SearchResults data:
+    -- if you get a font in a search result, that font shouldn't be "thrown in" to the sorted-by-popularity list, even if it's in the right place, because there's no guarantee there won't be fonts missing. Eg. sorted by popularity could show A, B, C, and search could return E. Now if you put E on the end of A, B, C, it looks like E is the next-most popular to C, when in fact that's D. Also, when D is loaded, E will jump down. you do, however, want to keep the links for any fonts the search has requested. that way, if any of the search results do pop up in the popularity list, they'll already have their stylesheets.
     { availableFonts : WebData (List Font) -- what fonts are available, from Google Fonts Developer API, sorted by popularity
 
     -- Requesting all available fonts at once caused page load problem, isn't polite, and isn't necessary. On page load, request enough fonts that they fill the page, and more will be loaded when the user scrolls to the bottom.
-    -- if you get a font in a search result, that font shouldn't be "thrown in" to the sorted-by-popularity list, even if it's in the right place, because there's no guarantee there won't be fonts missing. Eg. sorted by popularity could show A, B, C, and search could return E. Now if you put E on the end of A, B, C, it looks like E is the next-most popular to C, when in fact that's D. Also, when D is loaded, E will jump down. you do, however, want to keep the links for any fonts the search has requested. that way, if any of the search results do pop up in the popularity list, they'll already have their stylesheets.
+    , visibleFonts : Int -- an Int representing how far down the availableFonts list we are. The trouble is that you have to remember to update both availableFonts and the Int at the same time. TODO This Int could be part of availableFonts' type. To reflect the fact that it's an optimisation, this fact could be documented in availableFonts' type!
+
+    -- and possibly, the font requests could be stored in availableFonts' type: (requested : Bool in the Font type), and groupings stored in availableFonts' type:
+    -- availableFonts : { requested : List (List Font), unrequested : List Font }
+    -- no, because then when searched-for fonts get in requested, how do you keep a record of which sorted-by-popularity fonts should be visible?
+    , searchResults : List Font -- fonts that match the last search (subset of availableFonts)
     , requestedFonts : RequestedFonts -- The same font should not be requested more than once (via link href or however). This could happen if a font is in a search result but it's already in the sorted-by-popularity list (or vice versa). Storing which fonts have already been requested means we can avoid requesting the same one again.
 
     -- RequestedFonts also records which fonts were requested together (multiple fonts can be requested per HTTP request). Each list of fonts goes to make up the HTTP request to request that list. If the HTTP request changes, then the DOM changes (because we're using link hrefs to request fonts), and if the DOM changes, the browser might re-request unnecessarily. Sure, a link with the same href might be served by the browser's cache, but that shouldn't be relied upon. Also, while working with link href, we'll have to assume that all requests are successful.
@@ -34,14 +39,8 @@ type alias Model =
        <link href="...FontD|FontE">
     -}
     -- This detail is hidden behind the RequestedFonts type.
-    , visibleFonts : Int -- an Int representing how far down the availableFonts list we are. The trouble is that you have to remember to update both availableFonts and the Int at the same time. TODO This Int could be part of availableFonts' type. To reflect the fact that it's an optimisation, this fact could be documented in availableFonts' type!
-
-    -- and possibly, the font requests could be stored in availableFonts' type: (requested : Bool in the Font type), and groupings stored in availableFonts' type:
-    -- availableFonts : { requested : List (List Font), unrequested : List Font }
-    -- no, because then when searched-for fonts get in requested, how do you keep a record of which sorted-by-popularity fonts should be visible?
-    , searchResults : List Font -- fonts that match the last search (subset of availableFonts)
-    , searchString : String -- what's typed into the Search field
-    , sampleText : String -- what's typed into the Sample text field
+    , searchInput : String -- what's typed into the Search field
+    , sampleTextInput : String -- what's typed into the Sample text field
     , fontSize : String -- the selected font size
     , showAllOrResults : View -- necessary so that the view can choose between using searchResults and visibleFonts (all) as a data source
     , windowWidth : Int
@@ -66,7 +65,7 @@ fontsPerRequest =
     8
 
 
-defaultText =
+defaultSampleText =
     "Making the Web Beautiful!"
 
 
@@ -81,21 +80,24 @@ apiKey =
 init : Int -> ( Model, Cmd Msg )
 init windowWidth =
     ( { availableFonts = Loading
-      , requestedFonts = []
       , visibleFonts = 0 -- or fontsPerRequest?
-      , sampleText = ""
-      , fontSize = defaultFontSize
-      , searchString = ""
+      , requestedFonts = []
       , searchResults = []
       , showAllOrResults = All
+      , searchInput = ""
+      , sampleTextInput = ""
+      , fontSize = defaultFontSize
       , windowWidth = windowWidth
       , scrollPosition = 0
       }
     , Http.get
-        -- get a list of the font families currently available
+        -- get the available font families
         { url =
             -- https://www.googleapis.com/webfonts/v1/webfonts?sort=popularity&key=...
-            Url.Builder.crossOrigin "https://www.googleapis.com" [ "webfonts", "v1", "webfonts" ] [ string "sort" "popularity", string "key" apiKey ]
+            Url.Builder.crossOrigin
+                "https://www.googleapis.com"
+                [ "webfonts", "v1", "webfonts" ]
+                [ string "sort" "popularity", string "key" apiKey ]
         , expect =
             expectJson (RemoteData.fromResult >> FontsResponse) Fonts.decodeFonts
         }
@@ -155,11 +157,14 @@ update msg model =
                                     restOfFonts =
                                         List.drop model.visibleFonts fonts
 
+                                    fontsToRequest =
+                                        (List.take fontsPerRequest >> List.map Fonts.family) restOfFonts
+
                                     -- members of the list after fontsPerRequest
                                 in
                                 { model
                                     | visibleFonts = model.visibleFonts + fontsPerRequest
-                                    , requestedFonts = RequestedFonts.update model.requestedFonts ((List.take fontsPerRequest >> List.map .family) restOfFonts)
+                                    , requestedFonts = RequestedFonts.update model.requestedFonts fontsToRequest
                                     , scrollPosition = viewportY
                                 }
 
@@ -176,11 +181,14 @@ update msg model =
                         Success availableFonts ->
                             let
                                 searchResults =
-                                    List.filter (.family >> String.toLower >> String.contains (String.toLower model.searchString)) availableFonts
+                                    List.filter (Fonts.family >> String.toLower >> String.contains (String.toLower model.searchInput)) availableFonts
+
+                                fontFamilies =
+                                    List.map Fonts.family searchResults
                             in
                             ( { model
                                 | searchResults = searchResults
-                                , requestedFonts = RequestedFonts.update model.requestedFonts (List.map .family searchResults)
+                                , requestedFonts = RequestedFonts.update model.requestedFonts fontFamilies
                                 , showAllOrResults = SearchResults
                               }
                             , Cmd.none
@@ -190,21 +198,21 @@ update msg model =
                             ( model, Cmd.none )
 
                 SearchInput input ->
-                    -- TODO refactor (showAllOrResults = case input of...)
-                    case input of
-                        "" ->
-                            ( { model
-                                | searchString = input
-                                , showAllOrResults = All
-                              }
-                            , Cmd.none
-                            )
+                    ( { model
+                        | searchInput = input
+                        , showAllOrResults =
+                            case input of
+                                "" ->
+                                    All
 
-                        _ ->
-                            ( { model | searchString = input }, Cmd.none )
+                                _ ->
+                                    model.showAllOrResults
+                      }
+                    , Cmd.none
+                    )
 
                 SampleText text ->
-                    ( { model | sampleText = text }, Cmd.none )
+                    ( { model | sampleTextInput = text }, Cmd.none )
 
                 FontSize size ->
                     ( { model | fontSize = size }, Cmd.none )
@@ -213,8 +221,8 @@ update msg model =
                     ( { model
                         | showAllOrResults = All
                         , fontSize = defaultFontSize
-                        , sampleText = ""
-                        , searchString = ""
+                        , sampleTextInput = ""
+                        , searchInput = ""
                       }
                     , Cmd.none
                     )
@@ -243,7 +251,7 @@ update msg model =
                         Success fonts ->
                             let
                                 fontsToRequest =
-                                    (List.take fontsPerRequest >> List.map .family) fonts
+                                    (List.take fontsPerRequest >> List.map Fonts.family) fonts
 
                                 -- first fontsPerRequest fonts
                             in
@@ -297,27 +305,17 @@ view model =
                     [ header model.windowWidth
                     , div [] (List.map stylesheetLink model.requestedFonts)
                     , main_ [ style "margin-bottom" "1.5em" ]
-                        (majorNavigation model.windowWidth model.searchString model.sampleText model.fontSize
+                        (majorNavigation model.windowWidth model.searchInput model.sampleTextInput model.fontSize
                             ++ (case model.showAllOrResults of
                                     All ->
                                         [ fontsView (visibleFonts fonts model.visibleFonts)
-                                            (if model.sampleText == "" then
-                                                defaultText
-
-                                             else
-                                                model.sampleText
-                                            )
+                                            (sampleText model.sampleTextInput)
                                             model.fontSize
                                         ]
 
                                     SearchResults ->
                                         [ fontsView model.searchResults
-                                            (if model.sampleText == "" then
-                                                defaultText
-
-                                             else
-                                                model.sampleText
-                                            )
+                                            (sampleText model.sampleTextInput)
                                             model.fontSize
                                         ]
                                )
@@ -332,6 +330,14 @@ view model =
                     ]
         ]
     }
+
+
+sampleText input =
+    if input == "" then
+        defaultSampleText
+
+    else
+        input
 
 
 visibleFonts fonts n =
@@ -394,16 +400,16 @@ narrowHeader =
         ]
 
 
-majorNavigation windowWidth searchString sampleText fontSize =
+majorNavigation windowWidth searchInput sampleTextInput fontSize =
     if windowWidth >= (300 * 2 + 31) then
         -- hand-tuned to match fontsView
-        wideMajorNavigation searchString sampleText fontSize
+        wideMajorNavigation searchInput sampleTextInput fontSize
 
     else
-        narrowMajorNavigation searchString
+        narrowMajorNavigation searchInput
 
 
-wideMajorNavigation searchString sampleText fontSize =
+wideMajorNavigation searchInput sampleTextInput fontSize =
     [ div
         [ style "display" "flex"
         , style "justify-content" "space-between"
@@ -413,7 +419,7 @@ wideMajorNavigation searchString sampleText fontSize =
         , style "border" "thin solid black"
         , style "border-radius" "48px"
         ]
-        [ searchInput searchString
+        [ searchField searchInput
         , div
             [ style "width" "10px"
             , style "height" "20px"
@@ -431,7 +437,7 @@ wideMajorNavigation searchString sampleText fontSize =
             []
 
         -- spacing between inputs
-        , sampleTextInput sampleText
+        , sampleTextField sampleTextInput
         , sizeInput fontSize
         , div [ style "width" "10px" ] [] -- spacing
         , resetButton
@@ -439,7 +445,7 @@ wideMajorNavigation searchString sampleText fontSize =
     ]
 
 
-narrowMajorNavigation searchString =
+narrowMajorNavigation searchInput =
     [ div
         [ style "display" "flex"
         , style "justify-content" "space-between"
@@ -449,31 +455,38 @@ narrowMajorNavigation searchString =
         , style "border" "thin solid black"
         , style "border-radius" "48px"
         ]
-        [ searchInput searchString
+        [ searchField searchInput
         , div [ style "width" "10px" ] [] -- spacing
         , resetButton
         ]
     ]
 
 
-sampleTextInput sampleText =
-    input
+sampleTextField input =
+    Html.input
         [ type_ "text"
         , placeholder "Sample text"
         , onInput SampleText
-        , value sampleText
+        , value input
         , style "border" "none"
         , style "flex-grow" "1"
         ]
         []
 
 
-searchInput searchString =
-    Html.form [ onSubmit Search, style "margin-block-end" "0", style "flex-grow" "1", style "display" "flex", style "justify-content" "space-between" ]
-        [ input
+searchField input =
+    Html.form
+        -- used so that pressing Enter will submit the search
+        [ onSubmit Search
+        , style "margin-block-end" "0"
+        , style "display" "flex"
+        , style "justify-content" "space-between"
+        , style "flex-grow" "1" -- TODO remove?
+        ]
+        [ Html.input
             [ type_ "text" -- using text, not search, so that "border: none" has an effect
             , onInput SearchInput
-            , value searchString
+            , value input
             , placeholder "Search fonts"
             , style "border" "none"
             , style "flex-grow" "1"
@@ -505,34 +518,12 @@ resetButton =
 
 
 fontsView : List Font -> String -> String -> Html msg
-fontsView fonts text_ fontSize =
+fontsView fonts sampleText_ fontSize =
     div
         [ style "display" "grid"
         , style "grid-template-columns" "repeat(auto-fit, minmax(300px, 1fr))"
         ]
-        (List.map (fontView text_ fontSize) fonts)
-
-
-fontView text_ fontSize { family, category } =
-    div
-        [ style "border-top" "thin solid black"
-        , style "margin" "1.5em"
-        , style "padding-top" "0.5em"
-        ]
-        [ div
-            [ style "display" "flex"
-            , style "justify-content" "space-between"
-            , style "align-items" "flex-start" -- stops Add button stretching heightwise when font family text is over more than one line
-            ]
-            [ div [] [ text family ]
-            , button [] [ text "Add" ]
-            ]
-        , div
-            [ style "font-family" ("'" ++ family ++ "', " ++ category)
-            , style "font-size" fontSize
-            ]
-            [ text text_ ]
-        ]
+        (List.map (Fonts.view sampleText_ fontSize) fonts)
 
 
 backToTopButton =
@@ -569,7 +560,9 @@ stylesheetLink fontFamilies =
 
 
 fontRequestUrl fontFamilies =
-    "https://fonts.googleapis.com/css?family=" ++ familyUrlParameter fontFamilies
+    "https://fonts.googleapis.com/css?family="
+        -- no percent encoding, else font requested is e.g. "Open+Sans" not "Open Sans"
+        ++ familyUrlParameter fontFamilies
 
 
 familyUrlParameter : List String -> String

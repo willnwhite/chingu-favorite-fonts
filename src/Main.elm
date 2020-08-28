@@ -191,7 +191,7 @@ update msg model =
                 allFonts =
                     LUFonts.all (RemoteData.withDefault LUFonts.empty model.availableFonts)
 
-                -- TODO Rather than using withDefault (risky), factor any data that depends on the fonts being loaded from the API (eg searchResults) into model.availableFonts. That way you can use RemoteData.update to update it.
+                -- TODO Rather than using withDefault (risky), factor any data that depends on the fonts being loaded from the API (eg searchResults) into model.availableFonts (WebData x). That way you can use RemoteData.update to update it.
                 searchResults =
                     List.filter (Font.family >> String.toLower >> String.contains (String.toLower model.searchInput)) allFonts
 
@@ -251,6 +251,7 @@ update msg model =
             ( { model | windowWidth = width }, Cmd.none )
 
         FontsResponse response ->
+            -- TODO use RemoteData.update here
             case response of
                 Success fonts ->
                     let
@@ -289,47 +290,64 @@ view : Model -> Browser.Document Msg
 view model =
     { title = "Favorite Fonts"
     , body =
-        [ case model.availableFonts of
+        case model.availableFonts of
             NotAsked ->
-                text "Initialising..."
+                [ text "Initialising..." ]
 
             Loading ->
-                text "Fetching up-to-date fonts..."
+                [ text "Fetching up-to-date fonts..." ]
 
             RemoteData.Failure err ->
-                text ("Error: " ++ Debug.toString err)
+                [ text ("Error: " ++ Debug.toString err) ]
 
             Success fonts ->
-                div [ id "scroll", style "font-family" "sans-serif", style "overflow" "hidden" ]
-                    [ Header.wideOrNarrow model.windowWidth
-                    , div [] (List.map stylesheetLink model.requestedFonts)
-                    , main_ [ style "margin-bottom" "1.5em" ]
-                        (MajorNavigation.wideOrNarrow model.windowWidth model.searchInput SearchInput Search model.sampleTextInput SampleTextInput model.fontSize FontSize Reset
-                            ++ (case model.showAllOrResults of
-                                    All ->
-                                        [ Fonts.view
-                                            (LUFonts.loaded fonts)
-                                            (sampleText model.sampleTextInput)
-                                            model.fontSize
-                                        ]
-
-                                    SearchResults ->
-                                        [ Fonts.view model.searchResults
-                                            (sampleText model.sampleTextInput)
-                                            model.fontSize
-                                        ]
-                               )
-                            ++ (if model.scrollPosition >= 300 then
-                                    [ backToTopButton ]
-
-                                else
-                                    []
-                               )
-                        )
-                    , footer
-                    ]
-        ]
+                [ fontsLoadedView fonts model ]
     }
+
+
+fontsLoadedView fonts ({ windowWidth, requestedFonts, searchInput, sampleTextInput, fontSize, scrollPosition, searchResults, showAllOrResults } as model_) =
+    -- TODO another example of why factoring these parameters into the WebData type would make sense
+    div [ style "font-family" "sans-serif" ]
+        [ Header.wideOrNarrow windowWidth
+        , {- RequestedFonts. -} stylesheetLinks requestedFonts
+        , Html.main_ [ style "margin-bottom" "1.5em" ]
+            (let
+                mainChildren =
+                    [ majorNavigation model_
+                    , fontsView fonts model_
+                    ]
+             in
+             if scrollPosition >= 300 then
+                mainChildren ++ [ backToTopButton ]
+
+             else
+                mainChildren
+            )
+        , footer
+        ]
+
+
+majorNavigation { windowWidth, searchInput, sampleTextInput, fontSize } =
+    -- TODO factor these Msgs into MajorNavigation to make it its own unit
+    MajorNavigation.wideOrNarrow windowWidth searchInput SearchInput Search sampleTextInput SampleTextInput fontSize FontSize Reset
+
+
+fontsView fonts { showAllOrResults, sampleTextInput, fontSize, searchResults } =
+    case showAllOrResults of
+        All ->
+            Fonts.view
+                (LUFonts.loaded fonts)
+                (sampleText sampleTextInput)
+                fontSize
+
+        SearchResults ->
+            Fonts.view searchResults
+                (sampleText sampleTextInput)
+                fontSize
+
+
+stylesheetLinks requestedFonts =
+    div [] (List.map stylesheetLink requestedFonts)
 
 
 sampleText input =
@@ -338,10 +356,6 @@ sampleText input =
 
     else
         input
-
-
-
--- HTML
 
 
 backToTopButton =
@@ -364,7 +378,10 @@ footer =
         , style "background" "white"
         , style "padding-top" "1em"
         ]
-        [ div [ style "text-align" "center" ] [ text "Made by Will White" ] ]
+        [ div
+            [ style "text-align" "center" ]
+            [ text "Made by Will White" ]
+        ]
 
 
 
@@ -393,6 +410,7 @@ familyUrlParameter =
 -- MAIN
 
 
+main : Program Int Model Msg
 main =
     Browser.document
         { init = init

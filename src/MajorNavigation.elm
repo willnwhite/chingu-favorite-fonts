@@ -15,7 +15,7 @@ wideOrNarrow windowWidth searchInput searchInputMsg searchMsg sampleTextInput sa
 
 
 wide searchInput searchInputMsg searchMsg sampleTextInput sampleTextMsg fontSize fontSizeMsg resetMsg =
-    [ div
+    div
         [ style "display" "flex"
         , style "justify-content" "space-between"
         , style "align-items" "center"
@@ -47,11 +47,10 @@ wide searchInput searchInputMsg searchMsg sampleTextInput sampleTextMsg fontSize
         , div [ style "width" "10px" ] [] -- spacing
         , resetButton resetMsg
         ]
-    ]
 
 
 narrow searchInput searchInputMsg searchMsg resetMsg =
-    [ div
+    div
         [ style "display" "flex"
         , style "justify-content" "space-between"
         , style "align-items" "center"
@@ -64,7 +63,6 @@ narrow searchInput searchInputMsg searchMsg resetMsg =
         , div [ style "width" "10px" ] [] -- spacing
         , resetButton resetMsg
         ]
-    ]
 
 
 sampleTextField input msg =

@@ -1,4 +1,7 @@
-module RequestedFonts exposing (RequestedFonts, update)
+module RequestedFonts exposing (..)
+
+import Html exposing (..)
+import Html.Attributes exposing (..)
 
 
 type alias RequestedFonts =
@@ -13,7 +16,7 @@ type alias FontFamily =
     String
 
 
-update : RequestedFonts -> List String -> RequestedFonts
+update : RequestedFonts -> List FontFamily -> RequestedFonts
 update requestedFonts fontsNeeded =
     let
         filterOutList : List a -> List a -> List a
@@ -40,3 +43,26 @@ update requestedFonts fontsNeeded =
 -- > Main.fontsToRequest ["a","b"] ["c"]
 -- Just ["c"] : Maybe (List String)
 -- (write a test: when there are fonts to request over what's already been requested, only the fonts that haven't already been requested will be returned.)
+-- VIEW
+
+
+stylesheetLinks requestedFonts =
+    div [] (List.map stylesheetLink requestedFonts)
+
+
+stylesheetLink : List FontFamily -> Html msg
+stylesheetLink fontFamilies =
+    -- <link rel="stylesheet" href="...">
+    Html.node "link" [ rel "stylesheet", href (fontRequestUrl fontFamilies) ] []
+
+
+fontRequestUrl fontFamilies =
+    "https://fonts.googleapis.com/css?family="
+        -- no percent encoding, else font requested is e.g. "Open+Sans" not "Open Sans"
+        ++ familyUrlParameter fontFamilies
+
+
+familyUrlParameter : List FontFamily -> String
+familyUrlParameter =
+    -- ["Open Sans","Roboto"] -> "Open+Sans|Roboto"
+    List.map (String.replace " " "+") >> String.join "|"

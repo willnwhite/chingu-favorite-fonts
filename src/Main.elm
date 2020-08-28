@@ -301,15 +301,15 @@ view model =
                 [ text ("Error: " ++ Debug.toString err) ]
 
             Success fonts ->
-                [ fontsLoadedView fonts model ]
+                [ viewWhenFontsLoaded fonts model ]
     }
 
 
-fontsLoadedView fonts ({ windowWidth, requestedFonts, searchInput, sampleTextInput, fontSize, scrollPosition, searchResults, showAllOrResults } as model_) =
-    -- TODO another example of why factoring these parameters into the WebData type would make sense
+viewWhenFontsLoaded fonts ({ windowWidth, requestedFonts, searchInput, sampleTextInput, fontSize, scrollPosition, searchResults, showAllOrResults } as model_) =
+    -- TODO another example of why factoring these parameters into the WebData type would make sense (too many parameters)
     div [ style "font-family" "sans-serif" ]
         [ Header.wideOrNarrow windowWidth
-        , {- RequestedFonts. -} stylesheetLinks requestedFonts
+        , RequestedFonts.stylesheetLinks requestedFonts
         , Html.main_ [ style "margin-bottom" "1.5em" ]
             (let
                 mainChildren =
@@ -346,10 +346,6 @@ fontsView fonts { showAllOrResults, sampleTextInput, fontSize, searchResults } =
                 fontSize
 
 
-stylesheetLinks requestedFonts =
-    div [] (List.map stylesheetLink requestedFonts)
-
-
 sampleText input =
     if input == "" then
         defaultSampleText
@@ -382,28 +378,6 @@ footer =
             [ style "text-align" "center" ]
             [ text "Made by Will White" ]
         ]
-
-
-
--- STYLESHEET LINK
-
-
-stylesheetLink : List String -> Html msg
-stylesheetLink fontFamilies =
-    -- <link rel="stylesheet" href="...">
-    Html.node "link" [ rel "stylesheet", href (fontRequestUrl fontFamilies) ] []
-
-
-fontRequestUrl fontFamilies =
-    "https://fonts.googleapis.com/css?family="
-        -- no percent encoding, else font requested is e.g. "Open+Sans" not "Open Sans"
-        ++ familyUrlParameter fontFamilies
-
-
-familyUrlParameter : List String -> String
-familyUrlParameter =
-    -- ["Open Sans","Roboto"] -> "Open+Sans|Roboto"
-    List.map (String.replace " " "+") >> String.join "|"
 
 
 

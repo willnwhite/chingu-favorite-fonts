@@ -3,12 +3,13 @@ port module Main exposing (..)
 import Browser
 import Browser.Dom
 import Browser.Events
-import Fonts exposing (Font)
+import Font exposing (Font)
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (onClick, onInput, onSubmit)
 import Http exposing (expectJson)
 import List.Extra exposing (groupsOf)
+import LoadedAndUnloadedFonts as LUFonts exposing (LoadedAndUnloadedFonts(..))
 import RemoteData exposing (RemoteData(..), WebData)
 import RequestedFonts exposing (RequestedFonts)
 import Task
@@ -22,11 +23,9 @@ import Url.Builder exposing (string)
 type alias Model =
     -- there's a split between All and SearchResults data:
     -- if you get a font in a search result, that font shouldn't be "thrown in" to the sorted-by-popularity list, even if it's in the right place, because there's no guarantee there won't be fonts missing. Eg. sorted by popularity could show A, B, C, and search could return E. Now if you put E on the end of A, B, C, it looks like E is the next-most popular to C, when in fact that's D. Also, when D is loaded, E will jump down. you do, however, want to keep the links for any fonts the search has requested. that way, if any of the search results do pop up in the popularity list, they'll already have their stylesheets.
-    { availableFonts : WebData (List Font) -- what fonts are available, from Google Fonts Developer API, sorted by popularity
+    { availableFonts : WebData LoadedAndUnloadedFonts -- what fonts are available, from Google Fonts Developer API, sorted by popularity
 
     -- Requesting all available fonts at once caused page load problem, isn't polite, and isn't necessary. On page load, request enough fonts that they fill the page, and more will be loaded when the user scrolls to the bottom.
-    , visibleFonts : Int -- an Int representing how far down the availableFonts list we are. The trouble is that you have to remember to update both availableFonts and the Int at the same time. TODO This Int could be part of availableFonts' type. To reflect the fact that it's an optimisation, this fact could be documented in availableFonts' type!
-
     -- and possibly, the font requests could be stored in availableFonts' type: (requested : Bool in the Font type), and groupings stored in availableFonts' type:
     -- availableFonts : { requested : List (List Font), unrequested : List Font }
     -- no, because then when searched-for fonts get in requested, how do you keep a record of which sorted-by-popularity fonts should be visible?
@@ -57,8 +56,45 @@ type View
     | SearchResults
 
 
+init : Int -> ( Model, Cmd Msg )
+init windowWidth =
+    ( { availableFonts = Loading
+      , requestedFonts = []
+      , searchResults = []
+      , showAllOrResults = All
+      , searchInput = ""
+      , sampleTextInput = ""
+      , fontSize = defaultFontSize
+      , windowWidth = windowWidth
+      , scrollPosition = 0
+      }
+    , getAvailableFonts
+    )
 
--- type VisibleFonts = VisibleFonts (List Font) Int
+
+getAvailableFonts =
+    Http.get
+        { url = developerApiUrl
+        , expect =
+            expectJson
+                (RemoteData.fromResult
+                    >> RemoteData.map (LoadedAndUnloadedFonts fontsPerRequest)
+                    >> FontsResponse
+                )
+                Font.decodeFonts
+        }
+
+
+developerApiUrl =
+    -- https://www.googleapis.com/webfonts/v1/webfonts?sort=popularity&key=...
+    Url.Builder.crossOrigin
+        "https://www.googleapis.com"
+        [ "webfonts", "v1", "webfonts" ]
+        [ string "sort" "popularity", string "key" apiKey ]
+
+
+apiKey =
+    "AIzaSyDXdgHuIP_D5ySRE5oA-Hd2qoZaaDBPCO4"
 
 
 fontsPerRequest =
@@ -73,39 +109,15 @@ defaultFontSize =
     "32px"
 
 
-apiKey =
-    "AIzaSyDXdgHuIP_D5ySRE5oA-Hd2qoZaaDBPCO4"
-
-
-init : Int -> ( Model, Cmd Msg )
-init windowWidth =
-    ( { availableFonts = Loading
-      , visibleFonts = 0 -- or fontsPerRequest?
-      , requestedFonts = []
-      , searchResults = []
-      , showAllOrResults = All
-      , searchInput = ""
-      , sampleTextInput = ""
-      , fontSize = defaultFontSize
-      , windowWidth = windowWidth
-      , scrollPosition = 0
-      }
-    , Http.get
-        -- get the available font families
-        { url =
-            -- https://www.googleapis.com/webfonts/v1/webfonts?sort=popularity&key=...
-            Url.Builder.crossOrigin
-                "https://www.googleapis.com"
-                [ "webfonts", "v1", "webfonts" ]
-                [ string "sort" "popularity", string "key" apiKey ]
-        , expect =
-            expectJson (RemoteData.fromResult >> FontsResponse) Fonts.decodeFonts
-        }
-    )
-
-
 
 -- PORTS
+-- Browser.Dom.getViewport has an issue (https://github.com/elm/browser/issues/118). These ports are a stand-in.
+
+
+port getViewport : () -> Cmd msg
+
+
+port viewport : (Viewport -> msg) -> Sub msg
 
 
 type alias Viewport =
@@ -116,30 +128,20 @@ type alias Viewport =
 
 
 
--- Browser.Dom.getViewport has an issue (https://github.com/elm/browser/issues/118). These ports are a stand-in.
-
-
-port getViewport : () -> Cmd msg
-
-
-port viewport : (Viewport -> msg) -> Sub msg
-
-
-
 -- UPDATE
 
 
 type Msg
-    = FontsResponse (WebData (List Font))
-    | SampleText String
-    | FontSize String
-    | SearchInput String
+    = FontsResponse (WebData LoadedAndUnloadedFonts)
+    | GotViewport Viewport
     | Search
+    | SearchInput String
+    | SampleTextInput String
+    | FontSize String
     | Reset
     | BackToTop
-    | NoOp
     | WindowResize Int Int
-    | GotViewport Viewport
+    | NoOp
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -154,16 +156,16 @@ update msg model =
                             if viewportY + viewportHeight >= sceneHeight then
                                 -- at bottom of page
                                 let
-                                    restOfFonts =
-                                        List.drop model.visibleFonts fonts
+                                    unloadedFonts =
+                                        LUFonts.unloaded fonts
 
                                     fontsToRequest =
-                                        (List.take fontsPerRequest >> List.map Fonts.family) restOfFonts
+                                        (List.take fontsPerRequest >> List.map Font.family) unloadedFonts
 
                                     -- members of the list after fontsPerRequest
                                 in
                                 { model
-                                    | visibleFonts = model.visibleFonts + fontsPerRequest
+                                    | availableFonts = Success (LUFonts.load fontsPerRequest fonts) -- TODO see about RemoteData.update, rather than applying Success manually
                                     , requestedFonts = RequestedFonts.update model.requestedFonts fontsToRequest
                                     , scrollPosition = viewportY
                                 }
@@ -177,25 +179,23 @@ update msg model =
                     )
 
                 Search ->
-                    case model.availableFonts of
-                        Success availableFonts ->
-                            let
-                                searchResults =
-                                    List.filter (Fonts.family >> String.toLower >> String.contains (String.toLower model.searchInput)) availableFonts
+                    let
+                        (LoadedAndUnloadedFonts _ allFonts) =
+                            fonts
 
-                                fontFamilies =
-                                    List.map Fonts.family searchResults
-                            in
-                            ( { model
-                                | searchResults = searchResults
-                                , requestedFonts = RequestedFonts.update model.requestedFonts fontFamilies
-                                , showAllOrResults = SearchResults
-                              }
-                            , Cmd.none
-                            )
+                        searchResults =
+                            List.filter (Font.family >> String.toLower >> String.contains (String.toLower model.searchInput)) allFonts
 
-                        _ ->
-                            ( model, Cmd.none )
+                        fontFamilies =
+                            List.map Font.family searchResults
+                    in
+                    ( { model
+                        | searchResults = searchResults
+                        , requestedFonts = RequestedFonts.update model.requestedFonts fontFamilies
+                        , showAllOrResults = SearchResults
+                      }
+                    , Cmd.none
+                    )
 
                 SearchInput input ->
                     ( { model
@@ -211,7 +211,7 @@ update msg model =
                     , Cmd.none
                     )
 
-                SampleText text ->
+                SampleTextInput text ->
                     ( { model | sampleTextInput = text }, Cmd.none )
 
                 FontSize size ->
@@ -251,13 +251,13 @@ update msg model =
                         Success fonts ->
                             let
                                 fontsToRequest =
-                                    (List.take fontsPerRequest >> List.map Fonts.family) fonts
+                                    -- NOTE by this point, there should be fontsPerRequest loaded fonts
+                                    LUFonts.loaded fonts |> List.map Font.family
 
-                                -- first fontsPerRequest fonts
+                                -- the first fontsPerRequest fonts
                             in
                             ( { model
                                 | availableFonts = response
-                                , visibleFonts = model.visibleFonts + fontsPerRequest
                                 , requestedFonts = RequestedFonts.update model.requestedFonts fontsToRequest
                               }
                             , getViewport ()
@@ -268,6 +268,7 @@ update msg model =
                             ( { model | availableFonts = response }, Cmd.none )
 
                 _ ->
+                    -- There are no other msgs expected before availableFonts is loaded.
                     ( model, Cmd.none )
 
 
@@ -308,7 +309,8 @@ view model =
                         (majorNavigation model.windowWidth model.searchInput model.sampleTextInput model.fontSize
                             ++ (case model.showAllOrResults of
                                     All ->
-                                        [ fontsView (visibleFonts fonts model.visibleFonts)
+                                        [ fontsView
+                                            (LUFonts.loaded fonts)
                                             (sampleText model.sampleTextInput)
                                             model.fontSize
                                         ]
@@ -466,7 +468,7 @@ sampleTextField input =
     Html.input
         [ type_ "text"
         , placeholder "Sample text"
-        , onInput SampleText
+        , onInput SampleTextInput
         , value input
         , style "border" "none"
         , style "flex-grow" "1"
@@ -523,7 +525,7 @@ fontsView fonts sampleText_ fontSize =
         [ style "display" "grid"
         , style "grid-template-columns" "repeat(auto-fit, minmax(300px, 1fr))"
         ]
-        (List.map (Fonts.view sampleText_ fontSize) fonts)
+        (List.map (Font.view sampleText_ fontSize) fonts)
 
 
 backToTopButton =

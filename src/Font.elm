@@ -1,4 +1,4 @@
-module Fonts exposing (Font, decodeFonts, family, view)
+module Font exposing (Font, decodeFonts, family, view)
 
 import Html exposing (..)
 import Html.Attributes exposing (style)

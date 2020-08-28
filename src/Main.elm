@@ -12,6 +12,7 @@ import Html.Events exposing (onClick, onInput, onSubmit)
 import Http exposing (expectJson)
 import List.Extra exposing (groupsOf)
 import LoadedAndUnloadedFonts as LUFonts exposing (LoadedAndUnloadedFonts(..))
+import MajorNavigation
 import RemoteData exposing (RemoteData(..), WebData)
 import RequestedFonts exposing (RequestedFonts)
 import Task
@@ -303,7 +304,7 @@ view model =
                     [ Header.wideOrNarrow model.windowWidth
                     , div [] (List.map stylesheetLink model.requestedFonts)
                     , main_ [ style "margin-bottom" "1.5em" ]
-                        (majorNavigation model.windowWidth model.searchInput model.sampleTextInput model.fontSize
+                        (MajorNavigation.wideOrNarrow model.windowWidth model.searchInput SearchInput Search model.sampleTextInput SampleTextInput model.fontSize FontSize Reset
                             ++ (case model.showAllOrResults of
                                     All ->
                                         [ Fonts.view
@@ -341,123 +342,6 @@ sampleText input =
 
 
 -- HTML
-
-
-majorNavigation windowWidth searchInput sampleTextInput fontSize =
-    if windowWidth >= (300 * 2 + 31) then
-        -- hand-tuned to match Fonts.view
-        wideMajorNavigation searchInput sampleTextInput fontSize
-
-    else
-        narrowMajorNavigation searchInput
-
-
-wideMajorNavigation searchInput sampleTextInput fontSize =
-    [ div
-        [ style "display" "flex"
-        , style "justify-content" "space-between"
-        , style "align-items" "center"
-        , style "margin" "1.5em"
-        , style "padding" "5px 10px"
-        , style "border" "thin solid black"
-        , style "border-radius" "48px"
-        ]
-        [ searchField searchInput
-        , div
-            [ style "width" "10px"
-            , style "height" "20px"
-            , style "border-right" "thin solid black"
-            ]
-            []
-
-        -- spacing between inputs
-        , div
-            [ style "width" "10px"
-            , style "height" "20px"
-
-            -- , style "border-left" "thin solid black"
-            ]
-            []
-
-        -- spacing between inputs
-        , sampleTextField sampleTextInput
-        , sizeInput fontSize
-        , div [ style "width" "10px" ] [] -- spacing
-        , resetButton
-        ]
-    ]
-
-
-narrowMajorNavigation searchInput =
-    [ div
-        [ style "display" "flex"
-        , style "justify-content" "space-between"
-        , style "align-items" "center"
-        , style "margin" "1.5em"
-        , style "padding" "5px 10px"
-        , style "border" "thin solid black"
-        , style "border-radius" "48px"
-        ]
-        [ searchField searchInput
-        , div [ style "width" "10px" ] [] -- spacing
-        , resetButton
-        ]
-    ]
-
-
-sampleTextField input =
-    Html.input
-        [ type_ "text"
-        , placeholder "Sample text"
-        , onInput SampleTextInput
-        , value input
-        , style "border" "none"
-        , style "flex-grow" "1"
-        ]
-        []
-
-
-searchField input =
-    Html.form
-        -- used so that pressing Enter will submit the search
-        [ onSubmit Search
-        , style "margin-block-end" "0"
-        , style "display" "flex"
-        , style "justify-content" "space-between"
-        , style "flex-grow" "1" -- TODO remove?
-        ]
-        [ Html.input
-            [ type_ "text" -- using text, not search, so that "border: none" has an effect
-            , onInput SearchInput
-            , value input
-            , placeholder "Search fonts"
-            , style "border" "none"
-            , style "flex-grow" "1"
-            ]
-            []
-        , button [ type_ "submit" ] [ text "Search" ]
-        ]
-
-
-sizeInput fontSize =
-    label []
-        [ select [ onInput FontSize ]
-            (List.map
-                (\size ->
-                    option
-                        [ Html.Attributes.value size
-                        , selected (size == fontSize)
-                        ]
-                        [ text size ]
-                )
-                [ "20px", "24px", "32px", "40px" ]
-             -- sizes
-            )
-        ]
-
-
-resetButton =
-    button [ onClick Reset ] [ text "Reset" ]
 
 
 backToTopButton =

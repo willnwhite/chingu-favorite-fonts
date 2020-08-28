@@ -4,6 +4,7 @@ import Browser
 import Browser.Dom
 import Browser.Events
 import Font exposing (Font)
+import Fonts exposing (Fonts)
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (onClick, onInput, onSubmit)
@@ -29,7 +30,7 @@ type alias Model =
     -- and possibly, the font requests could be stored in availableFonts' type: (requested : Bool in the Font type), and groupings stored in availableFonts' type:
     -- availableFonts : { requested : List (List Font), unrequested : List Font }
     -- no, because then when searched-for fonts get in requested, how do you keep a record of which sorted-by-popularity fonts should be visible?
-    , searchResults : List Font -- fonts that match the last search (subset of availableFonts)
+    , searchResults : Fonts -- fonts that match the last search (subset of availableFonts)
     , requestedFonts : RequestedFonts -- The same font should not be requested more than once (via link href or however). This could happen if a font is in a search result but it's already in the sorted-by-popularity list (or vice versa). Storing which fonts have already been requested means we can avoid requesting the same one again.
 
     -- RequestedFonts also records which fonts were requested together (multiple fonts can be requested per HTTP request). Each list of fonts goes to make up the HTTP request to request that list. If the HTTP request changes, then the DOM changes (because we're using link hrefs to request fonts), and if the DOM changes, the browser might re-request unnecessarily. Sure, a link with the same href might be served by the browser's cache, but that shouldn't be relied upon. Also, while working with link href, we'll have to assume that all requests are successful.
@@ -41,7 +42,7 @@ type alias Model =
     , searchInput : String -- what's typed into the Search field
     , sampleTextInput : String -- what's typed into the Sample text field
     , fontSize : String -- the selected font size
-    , showAllOrResults : View -- necessary so that the view can choose between using searchResults and visibleFonts (all) as a data source
+    , showAllOrResults : View -- necessary so that the view can choose between using searchResults or availableFonts (all) as a data source
     , windowWidth : Int
     , scrollPosition : Float
     }
@@ -270,6 +271,7 @@ update msg model =
 -- SUBSCRIPTIONS
 
 
+subscriptions : Model -> Sub Msg
 subscriptions model =
     Sub.batch
         [ viewport GotViewport
@@ -303,14 +305,14 @@ view model =
                         (majorNavigation model.windowWidth model.searchInput model.sampleTextInput model.fontSize
                             ++ (case model.showAllOrResults of
                                     All ->
-                                        [ fontsView
+                                        [ Fonts.view
                                             (LUFonts.loaded fonts)
                                             (sampleText model.sampleTextInput)
                                             model.fontSize
                                         ]
 
                                     SearchResults ->
-                                        [ fontsView model.searchResults
+                                        [ Fonts.view model.searchResults
                                             (sampleText model.sampleTextInput)
                                             model.fontSize
                                         ]
@@ -334,10 +336,6 @@ sampleText input =
 
     else
         input
-
-
-visibleFonts fonts n =
-    List.take n fonts
 
 
 
@@ -398,7 +396,7 @@ narrowHeader =
 
 majorNavigation windowWidth searchInput sampleTextInput fontSize =
     if windowWidth >= (300 * 2 + 31) then
-        -- hand-tuned to match fontsView
+        -- hand-tuned to match Fonts.view
         wideMajorNavigation searchInput sampleTextInput fontSize
 
     else
@@ -511,15 +509,6 @@ sizeInput fontSize =
 
 resetButton =
     button [ onClick Reset ] [ text "Reset" ]
-
-
-fontsView : List Font -> String -> String -> Html msg
-fontsView fonts sampleText_ fontSize =
-    div
-        [ style "display" "grid"
-        , style "grid-template-columns" "repeat(auto-fit, minmax(300px, 1fr))"
-        ]
-        (List.map (Font.view sampleText_ fontSize) fonts)
 
 
 backToTopButton =

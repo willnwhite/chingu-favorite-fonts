@@ -38,7 +38,7 @@ decodeFont =
 
 
 view : String -> String -> Font -> Html msg
-view text_ fontSize font =
+view sampleText fontSize font =
     div
         [ style "border-top" "thin solid black"
         , style "margin" "1.5em"
@@ -56,5 +56,5 @@ view text_ fontSize font =
             [ style "font-family" ("'" ++ font.family ++ "', " ++ font.category)
             , style "font-size" fontSize
             ]
-            [ text text_ ]
+            [ text sampleText ]
         ]

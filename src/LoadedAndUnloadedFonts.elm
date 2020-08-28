@@ -1,6 +1,8 @@
 module LoadedAndUnloadedFonts exposing (..)
 
-import Font exposing (Font)
+-- import Font exposing (Font)
+
+import Fonts exposing (Fonts)
 
 
 
@@ -8,26 +10,27 @@ import Font exposing (Font)
 
 
 type LoadedAndUnloadedFonts
-    = LoadedAndUnloadedFonts Int (List Font) -- Int represents how many fonts are loaded
+    = LoadedAndUnloadedFonts Int Fonts -- Int represents how many fonts are loaded
 
 
-loaded : LoadedAndUnloadedFonts -> List Font
+loaded : LoadedAndUnloadedFonts -> Fonts
 loaded (LoadedAndUnloadedFonts n fonts) =
-    List.take n fonts
+    Fonts.first n fonts
 
 
+unloaded : LoadedAndUnloadedFonts -> Fonts
 unloaded (LoadedAndUnloadedFonts n fonts) =
-    List.drop n fonts
+    Fonts.rest n fonts
 
 
-all : LoadedAndUnloadedFonts -> List Font
+all : LoadedAndUnloadedFonts -> Fonts
 all (LoadedAndUnloadedFonts _ fonts) =
     fonts
 
 
-empty : LoadedAndUnloadedFonts
-empty =
-    LoadedAndUnloadedFonts 0 []
+none : LoadedAndUnloadedFonts
+none =
+    LoadedAndUnloadedFonts 0 Fonts.none
 
 
 load n (LoadedAndUnloadedFonts l fonts) =

@@ -9,6 +9,27 @@ type alias Fonts =
     List Font
 
 
+first =
+    List.take
+
+
+rest =
+    List.drop
+
+
+families =
+    List.map Font.family
+
+
+search : String -> (Fonts -> Fonts)
+search searchInput =
+    List.filter (Font.family >> String.toLower >> String.contains (String.toLower searchInput))
+
+
+none =
+    []
+
+
 view : Fonts -> String -> String -> Html msg
 view fonts sampleText fontSize =
     div

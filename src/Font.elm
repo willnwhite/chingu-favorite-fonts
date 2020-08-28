@@ -1,4 +1,4 @@
-module Font exposing (Font, decodeFonts, family, view)
+module Font exposing (..)
 
 import Html exposing (..)
 import Html.Attributes exposing (style)
@@ -13,6 +13,10 @@ type alias Font =
 
 family =
     .family
+
+
+category =
+    .category
 
 
 
@@ -53,7 +57,7 @@ view sampleText fontSize font =
             , button [] [ text "Add" ]
             ]
         , div
-            [ style "font-family" ("'" ++ font.family ++ "', " ++ font.category)
+            [ style "font-family" ("'" ++ family font ++ "', " ++ category font)
             , style "font-size" fontSize
             ]
             [ text sampleText ]

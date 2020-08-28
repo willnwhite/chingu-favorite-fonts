@@ -10,7 +10,6 @@ import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (onClick, onInput, onSubmit)
 import Http exposing (expectJson)
-import List.Extra exposing (groupsOf)
 import LoadedAndUnloadedFonts as LUFonts exposing (LoadedAndUnloadedFonts(..))
 import MajorNavigation
 import RemoteData exposing (RemoteData(..), WebData)
@@ -158,10 +157,10 @@ update msg model =
                         -- at bottom of page
                         let
                             unloadedFonts =
-                                LUFonts.unloaded (RemoteData.withDefault LUFonts.empty model.availableFonts)
+                                LUFonts.unloaded (RemoteData.withDefault LUFonts.none model.availableFonts)
 
                             fontsToRequest =
-                                (List.take fontsPerRequest >> List.map Font.family) unloadedFonts
+                                (Fonts.first fontsPerRequest >> Fonts.families) unloadedFonts
 
                             updateFonts fontsToBeUpdated =
                                 -- move this to LUFonts?
@@ -188,15 +187,18 @@ update msg model =
 
         Search ->
             let
+                allFonts : Fonts
+                -- allFonts =
+                --     LUFonts.all (RemoteData.withDefault LUFonts.none model.availableFonts)
                 allFonts =
-                    LUFonts.all (RemoteData.withDefault LUFonts.empty model.availableFonts)
+                    RemoteData.unwrap [] LUFonts.all model.availableFonts
 
-                -- TODO Rather than using withDefault (risky), factor any data that depends on the fonts being loaded from the API (eg searchResults) into model.availableFonts (WebData x). That way you can use RemoteData.update to update it.
+                -- TODO Rather than using withDefault/unwrap (risky: you have to be sure you're using them in the right place), factor any data that depends on the fonts being loaded from the API (eg searchResults) into model.availableFonts (WebData x). That way you can use RemoteData.update to update it.
                 searchResults =
-                    List.filter (Font.family >> String.toLower >> String.contains (String.toLower model.searchInput)) allFonts
+                    Fonts.search model.searchInput allFonts
 
                 fontFamilies =
-                    List.map Font.family searchResults
+                    Fonts.families searchResults
             in
             ( { model
                 | searchResults = searchResults
@@ -256,7 +258,7 @@ update msg model =
                 Success fonts ->
                     let
                         fontsToRequest =
-                            LUFonts.loaded fonts |> List.map Font.family
+                            LUFonts.loaded fonts |> Fonts.families
                     in
                     ( { model
                         | availableFonts = response

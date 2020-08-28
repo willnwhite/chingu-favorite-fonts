@@ -31,7 +31,6 @@ type alias Model =
     -- and possibly, the font requests could be stored in availableFonts' type: (requested : Bool in the Font type), and groupings stored in availableFonts' type:
     -- availableFonts : { requested : List (List Font), unrequested : List Font }
     -- no, because then when searched-for fonts get in requested, how do you keep a record of which sorted-by-popularity fonts should be visible?
-    , searchResults : Fonts -- fonts that match the last search (subset of availableFonts)
     , requestedFonts : RequestedFonts -- The same font should not be requested more than once (via link href or however). This could happen if a font is in a search result but it's already in the sorted-by-popularity list (or vice versa). Storing which fonts have already been requested means we can avoid requesting the same one again.
 
     -- RequestedFonts also records which fonts were requested together (multiple fonts can be requested per HTTP request). Each list of fonts goes to make up the HTTP request to request that list. If the HTTP request changes, then the DOM changes (because we're using link hrefs to request fonts), and if the DOM changes, the browser might re-request unnecessarily. Sure, a link with the same href might be served by the browser's cache, but that shouldn't be relied upon. Also, while working with link href, we'll have to assume that all requests are successful.
@@ -55,14 +54,13 @@ type alias Model =
 
 type View
     = All
-    | SearchResults
+    | SearchResults Fonts -- fonts that match the last search (subset of model.availableFonts)
 
 
 init : Int -> ( Model, Cmd Msg )
 init windowWidth =
     ( { availableFonts = Loading
       , requestedFonts = []
-      , searchResults = []
       , showAllOrResults = All
       , searchInput = ""
       , sampleTextInput = ""
@@ -182,7 +180,7 @@ update msg model =
                         , Cmd.none
                         )
 
-                SearchResults ->
+                SearchResults _ ->
                     ( model, Cmd.none )
 
         Search ->
@@ -201,9 +199,8 @@ update msg model =
                     Fonts.families searchResults
             in
             ( { model
-                | searchResults = searchResults
-                , requestedFonts = RequestedFonts.update model.requestedFonts fontFamilies
-                , showAllOrResults = SearchResults
+                | requestedFonts = RequestedFonts.update model.requestedFonts fontFamilies
+                , showAllOrResults = SearchResults searchResults
               }
             , Cmd.none
             )
@@ -307,7 +304,7 @@ view model =
     }
 
 
-viewWhenFontsLoaded fonts ({ windowWidth, requestedFonts, searchInput, sampleTextInput, fontSize, scrollPosition, searchResults, showAllOrResults } as model_) =
+viewWhenFontsLoaded fonts ({ windowWidth, requestedFonts, searchInput, sampleTextInput, fontSize, scrollPosition, showAllOrResults } as model_) =
     -- TODO another example of why factoring these parameters into the WebData type would make sense (too many parameters)
     div [ style "font-family" "sans-serif" ]
         [ Header.wideOrNarrow windowWidth
@@ -334,7 +331,7 @@ majorNavigation { windowWidth, searchInput, sampleTextInput, fontSize } =
     MajorNavigation.wideOrNarrow windowWidth searchInput SearchInput Search sampleTextInput SampleTextInput fontSize FontSize Reset
 
 
-fontsView fonts { showAllOrResults, sampleTextInput, fontSize, searchResults } =
+fontsView fonts { showAllOrResults, sampleTextInput, fontSize } =
     case showAllOrResults of
         All ->
             Fonts.view
@@ -342,7 +339,7 @@ fontsView fonts { showAllOrResults, sampleTextInput, fontSize, searchResults } =
                 (sampleText sampleTextInput)
                 fontSize
 
-        SearchResults ->
+        SearchResults searchResults ->
             Fonts.view searchResults
                 (sampleText sampleTextInput)
                 fontSize

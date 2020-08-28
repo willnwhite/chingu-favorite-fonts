@@ -6,9 +6,13 @@ import Json.Decode exposing (..)
 
 
 type alias Font =
-    { family : String
+    { family : FontFamily
     , category : String
     }
+
+
+type alias FontFamily =
+    String
 
 
 family =

@@ -1,5 +1,6 @@
 module RequestedFonts exposing (..)
 
+import Font exposing (FontFamily)
 import Html exposing (..)
 import Html.Attributes exposing (..)
 
@@ -10,10 +11,6 @@ type alias RequestedFonts =
 
 
 -- Each list is for one HTTP request. preserving the HTTP requests means the <link>'s hrefs are preserved, thus the DOM won't change and therefore re-requests won't be made
-
-
-type alias FontFamily =
-    String
 
 
 update : RequestedFonts -> List FontFamily -> RequestedFonts

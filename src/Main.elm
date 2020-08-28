@@ -146,130 +146,124 @@ type Msg
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
-    case model.availableFonts of
-        Success fonts ->
-            case msg of
-                GotViewport { sceneHeight, viewportHeight, viewportY } ->
-                    -- if we're at the bottom of the page, request some more fonts
-                    ( case model.showAllOrResults of
-                        All ->
-                            if viewportY + viewportHeight >= sceneHeight then
-                                -- at bottom of page
-                                let
-                                    unloadedFonts =
-                                        LUFonts.unloaded fonts
+    case msg of
+        GotViewport { sceneHeight, viewportHeight, viewportY } ->
+            -- if we're at the bottom of the page, request some more fonts
+            case model.showAllOrResults of
+                All ->
+                    if viewportY + viewportHeight >= sceneHeight then
+                        -- at bottom of page
+                        let
+                            unloadedFonts =
+                                LUFonts.unloaded (RemoteData.withDefault LUFonts.empty model.availableFonts)
 
-                                    fontsToRequest =
-                                        (List.take fontsPerRequest >> List.map Font.family) unloadedFonts
+                            fontsToRequest =
+                                (List.take fontsPerRequest >> List.map Font.family) unloadedFonts
 
-                                    -- members of the list after fontsPerRequest
-                                in
-                                { model
-                                    | availableFonts = Success (LUFonts.load fontsPerRequest fonts) -- TODO see about RemoteData.update, rather than applying Success manually
-                                    , requestedFonts = RequestedFonts.update model.requestedFonts fontsToRequest
-                                    , scrollPosition = viewportY
-                                }
+                            updateFonts fontsToBeUpdated =
+                                -- move this to LUFonts?
+                                ( LUFonts.load fontsPerRequest fontsToBeUpdated, Cmd.none )
 
-                            else
-                                { model | scrollPosition = viewportY }
+                            ( fonts_, _ ) =
+                                RemoteData.update updateFonts model.availableFonts
+                        in
+                        ( { model
+                            | availableFonts = fonts_
+                            , requestedFonts = RequestedFonts.update model.requestedFonts fontsToRequest
+                            , scrollPosition = viewportY
+                          }
+                        , Cmd.none
+                        )
 
-                        SearchResults ->
-                            model
-                    , Cmd.none
-                    )
+                    else
+                        ( { model | scrollPosition = viewportY }
+                        , Cmd.none
+                        )
 
-                Search ->
-                    let
-                        (LoadedAndUnloadedFonts _ allFonts) =
-                            fonts
-
-                        searchResults =
-                            List.filter (Font.family >> String.toLower >> String.contains (String.toLower model.searchInput)) allFonts
-
-                        fontFamilies =
-                            List.map Font.family searchResults
-                    in
-                    ( { model
-                        | searchResults = searchResults
-                        , requestedFonts = RequestedFonts.update model.requestedFonts fontFamilies
-                        , showAllOrResults = SearchResults
-                      }
-                    , Cmd.none
-                    )
-
-                SearchInput input ->
-                    ( { model
-                        | searchInput = input
-                        , showAllOrResults =
-                            case input of
-                                "" ->
-                                    All
-
-                                _ ->
-                                    model.showAllOrResults
-                      }
-                    , Cmd.none
-                    )
-
-                SampleTextInput text ->
-                    ( { model | sampleTextInput = text }, Cmd.none )
-
-                FontSize size ->
-                    ( { model | fontSize = size }, Cmd.none )
-
-                Reset ->
-                    ( { model
-                        | showAllOrResults = All
-                        , fontSize = defaultFontSize
-                        , sampleTextInput = ""
-                        , searchInput = ""
-                      }
-                    , Cmd.none
-                    )
-
-                BackToTop ->
-                    let
-                        resetViewport : Cmd Msg
-                        resetViewport =
-                            Task.perform (\_ -> NoOp) (Browser.Dom.setViewport 0 0)
-                    in
-                    ( model, resetViewport )
-
-                NoOp ->
+                SearchResults ->
                     ( model, Cmd.none )
 
-                WindowResize width _ ->
-                    ( { model | windowWidth = width }, Cmd.none )
+        Search ->
+            let
+                allFonts =
+                    LUFonts.all (RemoteData.withDefault LUFonts.empty model.availableFonts)
 
-                _ ->
-                    ( model, Cmd.none )
+                -- TODO Rather than using withDefault (risky), factor any data that depends on the fonts being loaded from the API (eg searchResults) into model.availableFonts. That way you can use RemoteData.update to update it.
+                searchResults =
+                    List.filter (Font.family >> String.toLower >> String.contains (String.toLower model.searchInput)) allFonts
 
-        _ ->
-            case msg of
-                FontsResponse response ->
-                    case response of
-                        Success fonts ->
-                            let
-                                fontsToRequest =
-                                    -- NOTE by this point, there should be fontsPerRequest loaded fonts
-                                    LUFonts.loaded fonts |> List.map Font.family
+                fontFamilies =
+                    List.map Font.family searchResults
+            in
+            ( { model
+                | searchResults = searchResults
+                , requestedFonts = RequestedFonts.update model.requestedFonts fontFamilies
+                , showAllOrResults = SearchResults
+              }
+            , Cmd.none
+            )
 
-                                -- the first fontsPerRequest fonts
-                            in
-                            ( { model
-                                | availableFonts = response
-                                , requestedFonts = RequestedFonts.update model.requestedFonts fontsToRequest
-                              }
-                            , getViewport ()
-                              -- check whether we're at the bottom of the page or not
-                            )
+        SearchInput input ->
+            ( { model
+                | searchInput = input
+                , showAllOrResults =
+                    case input of
+                        "" ->
+                            All
 
                         _ ->
-                            ( { model | availableFonts = response }, Cmd.none )
+                            model.showAllOrResults
+              }
+            , Cmd.none
+            )
+
+        SampleTextInput text ->
+            ( { model | sampleTextInput = text }, Cmd.none )
+
+        FontSize size ->
+            ( { model | fontSize = size }, Cmd.none )
+
+        Reset ->
+            ( { model
+                | showAllOrResults = All
+                , fontSize = defaultFontSize
+                , sampleTextInput = ""
+                , searchInput = ""
+              }
+            , Cmd.none
+            )
+
+        BackToTop ->
+            let
+                resetViewport : Cmd Msg
+                resetViewport =
+                    Task.perform (\_ -> NoOp) (Browser.Dom.setViewport 0 0)
+            in
+            ( model, resetViewport )
+
+        NoOp ->
+            ( model, Cmd.none )
+
+        WindowResize width _ ->
+            ( { model | windowWidth = width }, Cmd.none )
+
+        FontsResponse response ->
+            case response of
+                Success fonts ->
+                    let
+                        fontsToRequest =
+                            LUFonts.loaded fonts |> List.map Font.family
+                    in
+                    ( { model
+                        | availableFonts = response
+                        , requestedFonts = RequestedFonts.update model.requestedFonts fontsToRequest
+                      }
+                    , getViewport ()
+                      -- we've loaded fontsPerRequest fonts by this point, but now check whether we're at the bottom of the page or not
+                    )
 
                 _ ->
-                    -- There are no other msgs expected before availableFonts is loaded.
-                    ( model, Cmd.none )
+                    ( { model | availableFonts = response }, Cmd.none )
 
 
 

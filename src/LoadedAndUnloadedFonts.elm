@@ -20,5 +20,15 @@ unloaded (LoadedAndUnloadedFonts n fonts) =
     List.drop n fonts
 
 
+all : LoadedAndUnloadedFonts -> List Font
+all (LoadedAndUnloadedFonts _ fonts) =
+    fonts
+
+
+empty : LoadedAndUnloadedFonts
+empty =
+    LoadedAndUnloadedFonts 0 []
+
+
 load n (LoadedAndUnloadedFonts l fonts) =
     LoadedAndUnloadedFonts (l + n) fonts

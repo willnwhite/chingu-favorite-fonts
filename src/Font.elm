@@ -24,14 +24,9 @@ category =
 
 
 
--- DECODERS
+-- DECODER
 -- JSON structure to decode:
--- {"items": [{ "family": "Roboto", "category": "sans-serif", ... }], ...}
-
-
-decodeFonts : Decoder (List Font)
-decodeFonts =
-    at [ "items" ] (list decodeFont)
+-- { "family": "Roboto", "category": "sans-serif", ... }
 
 
 decodeFont : Decoder Font

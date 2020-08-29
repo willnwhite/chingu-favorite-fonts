@@ -1,8 +1,9 @@
 module Fonts exposing (..)
 
-import Font exposing (Font)
+import Font exposing (Font, decodeFont)
 import Html exposing (Html, div)
-import Html.Attributes exposing (..)
+import Html.Attributes exposing (style)
+import Json.Decode exposing (..)
 
 
 type alias Fonts =
@@ -28,6 +29,17 @@ search searchInput =
 
 none =
     []
+
+
+
+-- DECODER
+-- JSON structure to decode:
+-- {"items": [Font], ...}
+
+
+decodeFonts : Decoder Fonts
+decodeFonts =
+    at [ "items" ] (list decodeFont)
 
 
 view : Fonts -> String -> String -> Html msg

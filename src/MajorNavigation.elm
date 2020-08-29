@@ -1,20 +1,85 @@
-module MajorNavigation exposing (..)
+module MajorNavigation exposing (Model, Msg(..), fontSize, init, sampleTextInput, update, view)
 
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (..)
 
 
-wideOrNarrow windowWidth searchInput searchInputMsg searchMsg sampleTextInput sampleTextMsg fontSize fontSizeMsg resetMsg =
+
+-- CONFIGURATION
+
+
+defaultFontSize =
+    "32px"
+
+
+
+-- MODEL
+
+
+type Model
+    = Model
+        { searchInput : String -- what's typed into the Search field
+        , sampleTextInput : String -- what's typed into the Sample text field
+        , fontSize : String -- the selected font size
+        }
+
+
+sampleTextInput (Model model) =
+    model.sampleTextInput
+
+
+fontSize (Model model) =
+    model.fontSize
+
+
+type Msg
+    = SearchInput String
+    | Search String
+    | SampleTextInput String
+    | FontSize String
+    | Reset
+
+
+init =
+    Model
+        { searchInput = ""
+        , sampleTextInput = ""
+        , fontSize = defaultFontSize
+        }
+
+
+update : Msg -> Model -> Model
+update msg (Model model) =
+    case msg of
+        SearchInput input ->
+            Model { model | searchInput = input }
+
+        -- Search is picked up by Main through (MajorNavigation  : Main.Msg)
+        Search search ->
+            Model model
+
+        SampleTextInput input ->
+            Model { model | sampleTextInput = input }
+
+        FontSize size ->
+            Model { model | fontSize = size }
+
+        Reset ->
+            init
+
+
+view : Model -> Int -> Html Msg
+view (Model model) windowWidth =
     if windowWidth >= (300 * 2 + 31) then
         -- hand-tuned to match Fonts.view
-        wide searchInput searchInputMsg searchMsg sampleTextInput sampleTextMsg fontSize fontSizeMsg resetMsg
+        wide model.searchInput model.sampleTextInput model.fontSize
 
     else
-        narrow searchInput searchInputMsg searchMsg resetMsg
+        narrow model.searchInput
 
 
-wide searchInput searchInputMsg searchMsg sampleTextInput sampleTextMsg fontSize fontSizeMsg resetMsg =
+wide searchInput sampleTextInput_ fontSize_ =
     div
         [ style "display" "flex"
         , style "justify-content" "space-between"
@@ -24,7 +89,7 @@ wide searchInput searchInputMsg searchMsg sampleTextInput sampleTextMsg fontSize
         , style "border" "thin solid black"
         , style "border-radius" "48px"
         ]
-        [ searchField searchInput searchInputMsg searchMsg
+        [ searchField searchInput
         , div
             [ style "width" "10px"
             , style "height" "20px"
@@ -42,14 +107,14 @@ wide searchInput searchInputMsg searchMsg sampleTextInput sampleTextMsg fontSize
             []
 
         -- spacing between inputs
-        , sampleTextField sampleTextInput sampleTextMsg
-        , sizeInput fontSize fontSizeMsg
+        , sampleTextField sampleTextInput_
+        , sizeInput fontSize_
         , div [ style "width" "10px" ] [] -- spacing
-        , resetButton resetMsg
+        , resetButton
         ]
 
 
-narrow searchInput searchInputMsg searchMsg resetMsg =
+narrow searchInput =
     div
         [ style "display" "flex"
         , style "justify-content" "space-between"
@@ -59,17 +124,17 @@ narrow searchInput searchInputMsg searchMsg resetMsg =
         , style "border" "thin solid black"
         , style "border-radius" "48px"
         ]
-        [ searchField searchInput searchInputMsg searchMsg
+        [ searchField searchInput
         , div [ style "width" "10px" ] [] -- spacing
-        , resetButton resetMsg
+        , resetButton
         ]
 
 
-sampleTextField input msg =
+sampleTextField input =
     Html.input
         [ type_ "text"
         , placeholder "Sample text"
-        , onInput msg
+        , onInput SampleTextInput
         , value input
         , style "border" "none"
         , style "flex-grow" "1"
@@ -77,10 +142,10 @@ sampleTextField input msg =
         []
 
 
-searchField input searchInputMsg searchMsg =
+searchField input =
     Html.form
         -- used so that pressing Enter will submit the search
-        [ onSubmit searchMsg
+        [ onSubmit (Search input)
         , style "margin-block-end" "0"
         , style "display" "flex"
         , style "justify-content" "space-between"
@@ -88,7 +153,7 @@ searchField input searchInputMsg searchMsg =
         ]
         [ Html.input
             [ type_ "text" -- using text, not search, so that "border: none" has an effect
-            , onInput searchInputMsg
+            , onInput SearchInput
             , value input
             , placeholder "Search fonts"
             , style "border" "none"
@@ -99,14 +164,14 @@ searchField input searchInputMsg searchMsg =
         ]
 
 
-sizeInput fontSize fontSizeMsg =
+sizeInput fontSize_ =
     label []
-        [ select [ onInput fontSizeMsg ]
+        [ select [ onInput FontSize ]
             (List.map
                 (\size ->
                     option
                         [ Html.Attributes.value size
-                        , selected (size == fontSize)
+                        , selected (size == fontSize_)
                         ]
                         [ text size ]
                 )
@@ -116,5 +181,5 @@ sizeInput fontSize fontSizeMsg =
         ]
 
 
-resetButton resetMsg =
-    button [ onClick resetMsg ] [ text "Reset" ]
+resetButton =
+    button [ onClick Reset ] [ text "Reset" ]

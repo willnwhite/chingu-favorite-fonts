@@ -55,8 +55,8 @@ update msg (Model model) =
         SearchInput input ->
             Model { model | searchInput = input }
 
-        -- Search is picked up by Main through (MajorNavigation  : Main.Msg)
-        Search search ->
+        -- Search is picked up by Main through (MjrNav : Main.Msg)
+        Search _ ->
             Model model
 
         SampleTextInput input ->

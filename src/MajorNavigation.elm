@@ -25,10 +25,12 @@ type Model
         }
 
 
+sampleTextInput : Model -> String
 sampleTextInput (Model model) =
     model.sampleTextInput
 
 
+fontSize : Model -> String
 fontSize (Model model) =
     model.fontSize
 
@@ -41,6 +43,7 @@ type Msg
     | Reset
 
 
+init : Model
 init =
     Model
         { searchInput = ""
@@ -79,6 +82,7 @@ view (Model model) windowWidth =
         narrow model.searchInput
 
 
+wide : String -> String -> String -> Html Msg
 wide searchInput sampleTextInput_ fontSize_ =
     div
         [ style "display" "flex"
@@ -114,6 +118,7 @@ wide searchInput sampleTextInput_ fontSize_ =
         ]
 
 
+narrow : String -> Html Msg
 narrow searchInput =
     div
         [ style "display" "flex"
@@ -130,6 +135,7 @@ narrow searchInput =
         ]
 
 
+sampleTextField : String -> Html Msg
 sampleTextField input =
     Html.input
         [ type_ "text"
@@ -142,6 +148,7 @@ sampleTextField input =
         []
 
 
+searchField : String -> Html Msg
 searchField input =
     Html.form
         -- used so that pressing Enter will submit the search
@@ -164,6 +171,7 @@ searchField input =
         ]
 
 
+sizeInput : String -> Html Msg
 sizeInput fontSize_ =
     label []
         [ select [ onInput FontSize ]
@@ -181,5 +189,6 @@ sizeInput fontSize_ =
         ]
 
 
+resetButton : Html Msg
 resetButton =
     button [ onClick Reset ] [ text "Reset" ]

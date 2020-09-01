@@ -40,9 +40,13 @@ defaultSampleText =
 
 
 type alias Model =
-    -- there's a split between All and SearchResults data:
-    -- if you get a font in a search result, that font shouldn't be "thrown in" to the sorted-by-popularity list, even if it's in the right place, because there's no guarantee there won't be fonts missing. Eg. sorted by popularity could show A, B, C, and search could return E. Now if you put E on the end of A, B, C, it looks like E is the next-most popular to C, when in fact that's D. Also, when D is loaded, E will jump down. you do, however, want to keep the links for any fonts the search has requested. that way, if any of the search results do pop up in the popularity list, they'll already have their stylesheets.
-    { availableFonts : WebData LoadedAndUnloadedFonts -- what fonts are available, from Google Fonts Developer API, sorted by popularity
+    { main : WebData Model_
+    , windowWidth : Int
+    }
+
+
+type alias Model_ =
+    { availableFonts : LoadedAndUnloadedFonts -- what fonts are available, from Google Fonts Developer API, sorted by popularity
 
     -- Requesting all available fonts at once caused page load problem, isn't polite, and isn't necessary. On page load, request enough fonts that they fill the page, and more will be loaded when the user scrolls to the bottom.
     -- and possibly, the font requests could be stored in availableFonts' type: (requested : Bool in the Font type), and groupings stored in availableFonts' type:
@@ -56,46 +60,46 @@ type alias Model =
        <link href="...FontD|FontE">
     -}
     -- This detail is hidden behind the RequestedFonts type.
+    -- rename to fontRequests?
     , mjrNav : MjrNav.Model
     , showAllOrResults : View -- necessary so that the view can choose between using searchResults or model.availableFonts (all) as a data source
-    , windowWidth : Int
     , scrollPosition : Float
     }
 
 
-
--- perhaps refactor so that everything dependent on the list of fonts being fetched successfully is part of fonts -- same for searchResults: it should only exist if there's a search (not "")
-
-
 type View
     = All
-    | SearchResults Fonts -- fonts that match the last search (subset of model.availableFonts)
+    | SearchResults Fonts -- fonts that match the last search
 
 
 init : Int -> ( Model, Cmd Msg )
 init windowWidth =
-    ( { availableFonts = Loading
-      , requestedFonts = []
-      , showAllOrResults = All
-      , mjrNav = MjrNav.init
+    ( { main = Loading
       , windowWidth = windowWidth
-      , scrollPosition = 0
       }
     , getAvailableFonts
     )
 
 
+getAvailableFonts : Cmd Msg
 getAvailableFonts =
     Http.get
         { url = developerApiUrl
         , expect =
             expectJson
-                (RemoteData.fromResult
-                    >> RemoteData.map (LoadedAndUnloadedFonts fontsPerRequest)
-                    >> FontsResponse
-                )
+                (RemoteData.fromResult >> FontsResponse)
                 Fonts.decodeFonts
         }
+
+
+model_Init : Fonts -> Model_
+model_Init fonts =
+    { availableFonts = LoadedAndUnloadedFonts fontsPerRequest fonts
+    , requestedFonts = RequestedFonts.update RequestedFonts.none (Fonts.families fonts)
+    , mjrNav = MjrNav.init
+    , showAllOrResults = All
+    , scrollPosition = 0
+    }
 
 
 developerApiUrl =
@@ -129,7 +133,7 @@ type alias Viewport =
 
 
 type Msg
-    = FontsResponse (WebData LoadedAndUnloadedFonts)
+    = FontsResponse (WebData Fonts)
     | GotViewport Viewport
     | MjrNav MjrNav.Msg
     | BackToTop
@@ -140,25 +144,29 @@ type Msg
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
-        FontsResponse response ->
-            -- TODO use RemoteData.update here
-            case response of
-                Success fonts ->
+        WindowResize width _ ->
+            ( { model | windowWidth = width }, Cmd.none )
+
+        _ ->
+            case model.main of
+                Success model_ ->
                     let
-                        fontsToRequest =
-                            LUFonts.loaded fonts |> Fonts.families
+                        ( main_, cmd ) =
+                            updateModel_ msg model_
                     in
-                    ( { model
-                        | availableFonts = response
-                        , requestedFonts = RequestedFonts.update model.requestedFonts fontsToRequest
-                      }
-                    , getViewport ()
-                      -- we've loaded fontsPerRequest fonts by this point, but now check whether we're at the bottom of the page or not
-                    )
+                    ( { model | main = Success main_ }, cmd )
 
                 _ ->
-                    ( { model | availableFonts = response }, Cmd.none )
+                    let
+                        ( main_, cmd ) =
+                            updateNotSuccess msg model.main
+                    in
+                    ( { model | main = main_ }, cmd )
 
+
+updateModel_ : Msg -> Model_ -> ( Model_, Cmd Msg )
+updateModel_ msg model =
+    case msg of
         GotViewport { sceneHeight, viewportHeight, viewportY } ->
             case model.showAllOrResults of
                 All ->
@@ -167,17 +175,13 @@ update msg model =
                         -- at bottom of page
                         let
                             unloadedFonts =
-                                LUFonts.unloaded (RemoteData.withDefault LUFonts.none model.availableFonts)
+                                LUFonts.unloaded model.availableFonts
 
                             fontsToRequest =
                                 (Fonts.first fontsPerRequest >> Fonts.families) unloadedFonts
 
-                            updateFonts fontsToBeUpdated =
-                                -- move this to LUFonts?
-                                ( LUFonts.load fontsPerRequest fontsToBeUpdated, Cmd.none )
-
-                            ( fonts_, _ ) =
-                                RemoteData.update updateFonts model.availableFonts
+                            fonts_ =
+                                LUFonts.load fontsPerRequest model.availableFonts
                         in
                         ( { model
                             | availableFonts = fonts_
@@ -209,10 +213,27 @@ update msg model =
         NoOp ->
             ( model, Cmd.none )
 
-        WindowResize width _ ->
-            ( { model | windowWidth = width }, Cmd.none )
+        _ ->
+            ( model, Cmd.none )
 
 
+updateNotSuccess : Msg -> WebData Model_ -> ( WebData Model_, Cmd Msg )
+updateNotSuccess msg model =
+    case msg of
+        FontsResponse response ->
+            -- TODO use RemoteData.update here?
+            case response of
+                Success fonts ->
+                    ( Success (model_Init fonts), getViewport () )
+
+                _ ->
+                    ( RemoteData.map model_Init response, Cmd.none )
+
+        _ ->
+            ( model, Cmd.none )
+
+
+updateMjrNavMsg : MjrNav.Msg -> Model_ -> ( Model_, Cmd Msg )
 updateMjrNavMsg msg model =
     case msg of
         MjrNav.SearchInput input ->
@@ -231,17 +252,13 @@ updateMjrNavMsg msg model =
             )
 
         MjrNav.Search search ->
-            -- NOTE not sure whether Search is best as Main.Search or MjrNav.Search. All the updates here are to Main.model, not MjrNav.model, so it feels like it'd make more sense as Main.Search. But Main.Search can't be passed into MjrNav.view if MjrNav.view returns Html MjrNav.Msg. Perhaps Main.Search could be passed to a function that returns Html Main.Msg (probably defined in Main) that also contains MjrNav.view by using Html.map?
+            -- NOTE not sure whether Search is best as Main.Search or MjrNav.Search. All the updates here are to Main.model, not MjrNav.model, so it feels like it'd make more sense as Main.Search. But Main.Search can't be passed into MjrNav.view as MjrNav.view returns Html MjrNav.Msg. Perhaps Main.Search could be passed to a function that returns Html Main.Msg (probably defined in Main) that also contains MjrNav.view by using Html.map?
             let
                 allFonts : Fonts
-                -- allFonts =
-                --     LUFonts.all (RemoteData.withDefault LUFonts.none model.availableFonts)
                 allFonts =
-                    RemoteData.unwrap [] LUFonts.all model.availableFonts
+                    LUFonts.all model.availableFonts
 
-                -- TODO Rather than using withDefault/unwrap (risky: you have to be sure you're using them in the right place), factor any data that depends on the fonts being loaded from the API (eg searchResults) into model.availableFonts (WebData x). That way you can use RemoteData.update to update it.
                 searchResults =
-                    -- Fonts.search model.searchInput allFonts
                     Fonts.search search allFonts
 
                 fontFamilies =
@@ -291,32 +308,34 @@ view : Model -> Browser.Document Msg
 view model =
     { title = "Favorite Fonts"
     , body =
-        case model.availableFonts of
-            NotAsked ->
-                [ text "Initialising..." ]
+        [ div [ style "font-family" "sans-serif" ]
+            [ Header.responsive model.windowWidth
+            , case model.main of
+                NotAsked ->
+                    text "Initialising..."
 
-            Loading ->
-                [ text "Fetching up-to-date fonts..." ]
+                Loading ->
+                    text "Fetching up-to-date fonts..."
 
-            RemoteData.Failure err ->
-                [ text ("Error: " ++ Debug.toString err) ]
+                RemoteData.Failure err ->
+                    text ("Error: " ++ Debug.toString err)
 
-            Success fonts ->
-                [ viewWhenFontsLoaded fonts model ]
+                Success model_ ->
+                    loadedView model.windowWidth model_
+            ]
+        ]
     }
 
 
-viewWhenFontsLoaded : LoadedAndUnloadedFonts -> Model -> Html Msg
-viewWhenFontsLoaded fonts ({ windowWidth, requestedFonts, mjrNav, scrollPosition, showAllOrResults } as model_) =
-    -- TODO another example of why factoring these parameters into the WebData type would make sense (too many parameters)
-    div [ style "font-family" "sans-serif" ]
-        [ Header.wideOrNarrow windowWidth
-        , RequestedFonts.stylesheetLinks requestedFonts
+loadedView : Int -> Model_ -> Html Msg
+loadedView windowWidth { availableFonts, requestedFonts, mjrNav, scrollPosition, showAllOrResults } =
+    div []
+        [ RequestedFonts.stylesheetLinks requestedFonts
         , Html.main_ [ style "margin-bottom" "1.5em" ]
             (let
                 mainChildren =
-                    [ Html.map MjrNav (MjrNav.view model_.mjrNav windowWidth)
-                    , fontsView fonts model_
+                    [ Html.map MjrNav (MjrNav.view mjrNav windowWidth)
+                    , fontsView availableFonts showAllOrResults mjrNav
                     ]
              in
              if scrollPosition >= 300 then
@@ -329,7 +348,7 @@ viewWhenFontsLoaded fonts ({ windowWidth, requestedFonts, mjrNav, scrollPosition
         ]
 
 
-fontsView fonts { showAllOrResults, mjrNav } =
+fontsView fonts showAllOrResults mjrNav =
     case showAllOrResults of
         All ->
             Fonts.view

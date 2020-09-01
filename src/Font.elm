@@ -29,8 +29,8 @@ category =
 -- { "family": "Roboto", "category": "sans-serif", ... }
 
 
-decodeFont : Decoder Font
-decodeFont =
+decoder : Decoder Font
+decoder =
     map2 Font
         (field "family" string)
         (field "category" string)

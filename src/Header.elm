@@ -4,7 +4,7 @@ import Html exposing (..)
 import Html.Attributes exposing (..)
 
 
-wideOrNarrow windowWidth =
+responsive windowWidth =
     if windowWidth >= 720 then
         -- any less and "Catalog" comes too close to "Favorite Fonts"
         wide

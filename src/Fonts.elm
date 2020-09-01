@@ -1,6 +1,6 @@
 module Fonts exposing (..)
 
-import Font exposing (Font, decodeFont)
+import Font exposing (Font)
 import Html exposing (Html, div)
 import Html.Attributes exposing (style)
 import Json.Decode exposing (..)
@@ -39,7 +39,7 @@ none =
 
 decodeFonts : Decoder Fonts
 decodeFonts =
-    at [ "items" ] (list decodeFont)
+    at [ "items" ] (list Font.decoder)
 
 
 view : Fonts -> String -> String -> Html msg

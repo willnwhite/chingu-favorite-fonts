@@ -9,6 +9,11 @@ type alias RequestedFonts =
     List (List FontFamily)
 
 
+none : RequestedFonts
+none =
+    []
+
+
 
 -- Each list is for one HTTP request. preserving the HTTP requests means the <link>'s hrefs are preserved, thus the DOM won't change and therefore re-requests won't be made
 

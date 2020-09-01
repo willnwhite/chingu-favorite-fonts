@@ -25,7 +25,7 @@ category =
 
 
 -- DECODER
--- JSON structure to decode:
+-- JSON to decode:
 -- { "family": "Roboto", "category": "sans-serif", ... }
 
 

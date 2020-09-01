@@ -6,14 +6,6 @@ import Html.Events exposing (..)
 
 
 
--- CONFIGURATION
-
-
-defaultFontSize =
-    "32px"
-
-
-
 -- MODEL
 
 
@@ -43,8 +35,8 @@ type Msg
     | Reset
 
 
-init : Model
-init =
+init : String -> Model
+init defaultFontSize =
     Model
         { searchInput = ""
         , sampleTextInput = ""
@@ -69,7 +61,7 @@ update msg (Model model) =
             Model { model | fontSize = size }
 
         Reset ->
-            init
+            Model model
 
 
 view : Model -> Int -> Html Msg

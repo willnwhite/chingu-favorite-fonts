@@ -3,16 +3,16 @@ port module Main exposing (..)
 import Browser
 import Browser.Dom
 import Browser.Events
+import FontRequests exposing (FontRequests)
 import Fonts exposing (Fonts)
 import Header
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (onClick, onInput, onSubmit)
-import Http exposing (expectJson)
+import Http exposing (Error(..), expectJson)
 import LoadedAndUnloadedFonts as LUFonts exposing (LoadedAndUnloadedFonts(..))
 import MajorNavigation as MjrNav
 import RemoteData exposing (RemoteData(..), WebData)
-import RequestedFonts exposing (RequestedFonts)
 import Task
 import Url.Builder exposing (string)
 
@@ -33,9 +33,11 @@ defaultSampleText =
     "Making the Web Beautiful!"
 
 
+defaultFontSize =
+    "32px"
 
--- defaultFontSize =
---     "32px"
+
+
 -- MODEL
 
 
@@ -52,14 +54,14 @@ type alias Model_ =
     -- and possibly, the font requests could be stored in availableFonts' type: (requested : Bool in the Font type), and groupings stored in availableFonts' type:
     -- availableFonts : { requested : List (List Font), unrequested : List Font }
     -- no, because then when searched-for fonts get in requested, how do you keep a record of which sorted-by-popularity fonts should be visible?
-    , requestedFonts : RequestedFonts -- The same font should not be requested more than once (via link href or however). This could happen if a font is in a search result but it's already in the sorted-by-popularity list (or vice versa). Storing which fonts have already been requested means we can avoid requesting the same one again.
+    , fontRequests : FontRequests -- The same font should not be requested more than once (via link href or however). This could happen if a font is in a search result but it's already in the sorted-by-popularity list (or vice versa). Storing which fonts have already been requested means we can avoid requesting the same one again.
 
-    -- RequestedFonts also records which fonts were requested together (multiple fonts can be requested per HTTP request). Each list of fonts goes to make up the HTTP request to request that list. If the HTTP request changes, then the DOM changes (because we're using link hrefs to request fonts), and if the DOM changes, the browser might re-request unnecessarily. Sure, a link with the same href might be served by the browser's cache, but that shouldn't be relied upon. Also, while working with link href, we'll have to assume that all requests are successful.
+    -- FontRequests also records which fonts were requested together (multiple fonts can be requested per HTTP request). Each list of fonts goes to make up the HTTP request to request that list. If the HTTP request changes, then the DOM changes (because we're using link hrefs to request fonts), and if the DOM changes, the browser might re-request unnecessarily. Sure, a link with the same href might be served by the browser's cache, but that shouldn't be relied upon. Also, while working with link href, we'll have to assume that all requests are successful.
     {-
        <link href="...FontA|FontB|FontC">
        <link href="...FontD|FontE">
     -}
-    -- This detail is hidden behind the RequestedFonts type.
+    -- This detail is hidden behind the FontRequests type.
     -- rename to fontRequests?
     , mjrNav : MjrNav.Model
     , showAllOrResults : View -- necessary so that the view can choose between using searchResults or model.availableFonts (all) as a data source
@@ -94,9 +96,16 @@ getAvailableFonts =
 
 model_Init : Fonts -> Model_
 model_Init fonts =
-    { availableFonts = LoadedAndUnloadedFonts fontsPerRequest fonts
-    , requestedFonts = RequestedFonts.update RequestedFonts.none (Fonts.families fonts)
-    , mjrNav = MjrNav.init
+    let
+        availableFonts =
+            LoadedAndUnloadedFonts fontsPerRequest fonts
+
+        fontsToRequest =
+            LUFonts.loaded availableFonts |> Fonts.families
+    in
+    { availableFonts = availableFonts
+    , fontRequests = FontRequests.update FontRequests.none fontsToRequest
+    , mjrNav = MjrNav.init defaultFontSize
     , showAllOrResults = All
     , scrollPosition = 0
     }
@@ -185,7 +194,7 @@ updateModel_ msg model =
                         in
                         ( { model
                             | availableFonts = fonts_
-                            , requestedFonts = RequestedFonts.update model.requestedFonts fontsToRequest
+                            , fontRequests = FontRequests.update model.fontRequests fontsToRequest
                             , scrollPosition = viewportY
                           }
                         , Cmd.none
@@ -265,7 +274,7 @@ updateMjrNavMsg msg model =
                     Fonts.families searchResults
             in
             ( { model
-                | requestedFonts = RequestedFonts.update model.requestedFonts fontFamilies
+                | fontRequests = FontRequests.update model.fontRequests fontFamilies
                 , showAllOrResults = SearchResults searchResults
               }
             , Cmd.none
@@ -274,7 +283,7 @@ updateMjrNavMsg msg model =
         MjrNav.Reset ->
             ( { model
                 | showAllOrResults = All
-                , mjrNav = MjrNav.update msg model.mjrNav
+                , mjrNav = MjrNav.init defaultFontSize
               }
             , Cmd.none
             )
@@ -318,19 +327,38 @@ view model =
                     text "Fetching up-to-date fonts..."
 
                 RemoteData.Failure err ->
-                    text ("Error: " ++ Debug.toString err)
+                    failureView err
 
                 Success model_ ->
-                    loadedView model.windowWidth model_
+                    successView model.windowWidth model_
             ]
         ]
     }
 
 
-loadedView : Int -> Model_ -> Html Msg
-loadedView windowWidth { availableFonts, requestedFonts, mjrNav, scrollPosition, showAllOrResults } =
+failureView : Http.Error -> Html msg
+failureView err =
+    case err of
+        BadUrl url ->
+            text ("Google Fonts couldn't understand this website's request. The request was: " ++ url)
+
+        Timeout ->
+            text "It took too long to get a response from Google Fonts."
+
+        NetworkError ->
+            text "Your network connection failed."
+
+        BadStatus code ->
+            text ("Failure: status " ++ String.fromInt code)
+
+        BadBody responseBody ->
+            text ("This website couldn't understand Google Fonts' response. The response was: " ++ responseBody)
+
+
+successView : Int -> Model_ -> Html Msg
+successView windowWidth { availableFonts, fontRequests, mjrNav, scrollPosition, showAllOrResults } =
     div []
-        [ RequestedFonts.stylesheetLinks requestedFonts
+        [ FontRequests.stylesheetLinks fontRequests
         , Html.main_ [ style "margin-bottom" "1.5em" ]
             (let
                 mainChildren =
@@ -362,6 +390,7 @@ fontsView fonts showAllOrResults mjrNav =
                 (MjrNav.fontSize mjrNav)
 
 
+sampleText : String -> String
 sampleText input =
     if input == "" then
         defaultSampleText
@@ -370,6 +399,7 @@ sampleText input =
         input
 
 
+backToTopButton : Html Msg
 backToTopButton =
     button
         [ style "position" "fixed"
@@ -380,6 +410,7 @@ backToTopButton =
         [ text "Back to top" ]
 
 
+footer : Html msg
 footer =
     Html.footer
         [ style "position" "fixed"

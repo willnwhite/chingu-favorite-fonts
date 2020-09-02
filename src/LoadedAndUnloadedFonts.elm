@@ -1,7 +1,5 @@
 module LoadedAndUnloadedFonts exposing (..)
 
--- import Font exposing (Font)
-
 import Fonts exposing (Fonts)
 
 
@@ -10,17 +8,17 @@ import Fonts exposing (Fonts)
 
 
 type LoadedAndUnloadedFonts
-    = LoadedAndUnloadedFonts Int Fonts -- Int represents how many fonts are loaded
+    = LoadedAndUnloadedFonts Int Fonts -- Int represents how many fonts are loaded -- TODO refactor to not use Int, rather two separate lists of loaded and unloaded fonts (as that's easier to use and understand, and there's no evidence that that would affect user experience)
 
 
 loaded : LoadedAndUnloadedFonts -> Fonts
 loaded (LoadedAndUnloadedFonts n fonts) =
-    Fonts.first n fonts
+    Fonts.take n fonts
 
 
 unloaded : LoadedAndUnloadedFonts -> Fonts
 unloaded (LoadedAndUnloadedFonts n fonts) =
-    Fonts.rest n fonts
+    Fonts.drop n fonts
 
 
 all : LoadedAndUnloadedFonts -> Fonts

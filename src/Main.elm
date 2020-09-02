@@ -90,7 +90,7 @@ getAvailableFonts =
         , expect =
             expectJson
                 (RemoteData.fromResult >> FontsResponse)
-                Fonts.decodeFonts
+                Fonts.decoder
         }
 
 
@@ -187,7 +187,7 @@ updateModel_ msg model =
                                 LUFonts.unloaded model.availableFonts
 
                             fontsToRequest =
-                                (Fonts.first fontsPerRequest >> Fonts.families) unloadedFonts
+                                (Fonts.take fontsPerRequest >> Fonts.families) unloadedFonts
 
                             fonts_ =
                                 LUFonts.load fontsPerRequest model.availableFonts

@@ -1,4 +1,4 @@
-module Fonts exposing (..)
+module Fonts exposing (Fonts, decoder, drop, families, none, search, take, view)
 
 import Font exposing (Font)
 import Html exposing (Html, div)
@@ -6,29 +6,32 @@ import Html.Attributes exposing (style)
 import Json.Decode exposing (..)
 
 
-type alias Fonts =
-    List Font
+type Fonts
+    = Fonts (List Font)
 
 
-first =
-    List.take
+take : Int -> Fonts -> Fonts
+take n (Fonts fonts) =
+    Fonts (List.take n fonts)
 
 
-rest =
-    List.drop
+drop : Int -> Fonts -> Fonts
+drop n (Fonts fonts) =
+    Fonts (List.drop n fonts)
 
 
-families =
-    List.map Font.family
+families (Fonts fonts) =
+    List.map Font.family fonts
 
 
-search : String -> (Fonts -> Fonts)
-search searchInput =
-    List.filter (Font.family >> String.toLower >> String.contains (String.toLower searchInput))
+search : String -> Fonts -> Fonts
+search searchInput (Fonts fonts) =
+    Fonts (List.filter (Font.family >> String.toLower >> String.contains (String.toLower searchInput)) fonts)
 
 
+none : Fonts
 none =
-    []
+    Fonts []
 
 
 
@@ -37,13 +40,13 @@ none =
 -- {"items": [Font], ...}
 
 
-decodeFonts : Decoder Fonts
-decodeFonts =
-    at [ "items" ] (list Font.decoder)
+decoder : Decoder Fonts
+decoder =
+    map Fonts (at [ "items" ] (list Font.decoder))
 
 
 view : Fonts -> String -> String -> Html msg
-view fonts sampleText fontSize =
+view (Fonts fonts) sampleText fontSize =
     div
         [ style "display" "grid"
         , style "grid-template-columns" "repeat(auto-fit, minmax(300px, 1fr))"

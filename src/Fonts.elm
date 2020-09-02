@@ -1,9 +1,10 @@
-module Fonts exposing (Fonts, decoder, drop, families, none, search, take, view)
+module Fonts exposing (Fonts, append, decoder, drop, except, map, none, search, take, view)
 
 import Font exposing (Font)
 import Html exposing (Html, div)
 import Html.Attributes exposing (style)
 import Json.Decode exposing (..)
+import ListExcept
 
 
 type Fonts
@@ -20,8 +21,26 @@ drop n (Fonts fonts) =
     Fonts (List.drop n fonts)
 
 
-families (Fonts fonts) =
-    List.map Font.family fonts
+append : Fonts -> Fonts -> Fonts
+append (Fonts fonts) (Fonts fonts2) =
+    Fonts (List.append fonts fonts2)
+
+
+except : Fonts -> Fonts -> Fonts
+except (Fonts fonts) (Fonts fonts2) =
+    Fonts (ListExcept.except fonts fonts2)
+
+
+map : (Font -> b) -> Fonts -> List b
+map function (Fonts fonts) =
+    -- if map not used for anything except families, and Font.family not used anywhere else, then forget map and re-instate families
+    List.map function fonts
+
+
+
+-- families : Fonts -> List Font.FontFamily
+-- families (Fonts fonts) =
+--     List.map Font.family fonts
 
 
 search : String -> Fonts -> Fonts
@@ -42,7 +61,7 @@ none =
 
 decoder : Decoder Fonts
 decoder =
-    map Fonts (at [ "items" ] (list Font.decoder))
+    Json.Decode.map Fonts (at [ "items" ] (list Font.decoder))
 
 
 view : Fonts -> String -> String -> Html msg

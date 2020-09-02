@@ -1,38 +1,40 @@
-module FontRequests exposing (..)
+module FontRequests exposing (FontRequests, init, stylesheetLinks, update)
 
-import Font exposing (FontFamily)
+import Font exposing (Font, FontFamily)
+import Fonts exposing (Fonts)
 import Html exposing (..)
 import Html.Attributes exposing (..)
+import ListExcept
 
 
-type alias FontRequests =
-    List (List FontFamily)
-
-
-none : FontRequests
-none =
-    []
+type FontRequests
+    = FontRequests (List (List FontFamily))
 
 
 
 -- Each list is for one HTTP request. preserving the HTTP requests means the <link>'s hrefs are preserved, thus the DOM won't change and therefore re-requests won't be made
 
 
-update : FontRequests -> List FontFamily -> FontRequests
-update fontRequests fontsNeeded =
+init : Fonts -> FontRequests
+init fonts =
+    FontRequests [ Fonts.map Font.family fonts ]
+
+
+update : FontRequests -> Fonts -> FontRequests
+update (FontRequests fontRequests) fonts =
     let
-        filterOutList : List a -> List a -> List a
-        filterOutList fontRequests_ =
-            List.filter (\result -> not (List.member result fontRequests_))
+        fontFamilies =
+            Fonts.map Font.family fonts
 
-        -- TODO name parameters (or go point-free), put function at top-level to be tested, then PR to List.Extra
+        fontFamiliesExcept =
+            ListExcept.except (List.concat fontRequests) fontFamilies
     in
-    case filterOutList (List.concat fontRequests) fontsNeeded of
+    case fontFamiliesExcept of
         [] ->
-            fontRequests
+            FontRequests fontRequests
 
-        newFonts ->
-            fontRequests ++ [ newFonts ]
+        x ->
+            FontRequests (fontRequests ++ [ x ])
 
 
 
@@ -48,7 +50,8 @@ update fontRequests fontsNeeded =
 -- VIEW
 
 
-stylesheetLinks fontRequests =
+stylesheetLinks : FontRequests -> Html msg
+stylesheetLinks (FontRequests fontRequests) =
     div [] (List.map stylesheetLink fontRequests)
 
 

@@ -3,6 +3,7 @@ port module Main exposing (..)
 import Browser
 import Browser.Dom
 import Browser.Events
+import Font
 import FontRequests exposing (FontRequests)
 import Fonts exposing (Fonts)
 import Header
@@ -10,7 +11,6 @@ import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (onClick, onInput, onSubmit)
 import Http exposing (Error(..), expectJson)
-import LoadedAndUnloadedFonts as LUFonts exposing (LoadedAndUnloadedFonts(..))
 import MajorNavigation as MjrNav
 import RemoteData exposing (RemoteData(..), WebData)
 import Task
@@ -48,13 +48,9 @@ type alias Model =
 
 
 type alias Model_ =
-    { availableFonts : LoadedAndUnloadedFonts -- what fonts are available, from Google Fonts Developer API, sorted by popularity
-
-    -- Requesting all available fonts at once caused page load problem, isn't polite, and isn't necessary. On page load, request enough fonts that they fill the page, and more will be loaded when the user scrolls to the bottom.
-    -- and possibly, the font requests could be stored in availableFonts' type: (requested : Bool in the Font type), and groupings stored in availableFonts' type:
-    -- availableFonts : { requested : List (List Font), unrequested : List Font }
-    -- no, because then when searched-for fonts get in requested, how do you keep a record of which sorted-by-popularity fonts should be visible?
-    , fontRequests : FontRequests -- The same font should not be requested more than once (via link href or however). This could happen if a font is in a search result but it's already in the sorted-by-popularity list (or vice versa). Storing which fonts have already been requested means we can avoid requesting the same one again.
+    { availableFonts : Fonts -- the fonts that are available from Google Fonts, sorted by popularity. used to calculate fontsToShow and search results
+    , visibleFonts : Fonts -- the fonts shown in the All view (doesn't include fonts from searches)
+    , fontRequests : FontRequests -- The same font should not be requested more than once (via link href or however). This could happen if a font is in a search result but it's already in the sorted-by-popularity list (or vice versa). Storing which fonts have already been requested means we can avoid requesting the same one again. (includes fonts from searches)
 
     -- FontRequests also records which fonts were requested together (multiple fonts can be requested per HTTP request). Each list of fonts goes to make up the HTTP request to request that list. If the HTTP request changes, then the DOM changes (because we're using link hrefs to request fonts), and if the DOM changes, the browser might re-request unnecessarily. Sure, a link with the same href might be served by the browser's cache, but that shouldn't be relied upon. Also, while working with link href, we'll have to assume that all requests are successful.
     {-
@@ -94,17 +90,33 @@ getAvailableFonts =
         }
 
 
+
+-- model_Init : Fonts -> Model_
+-- model_Init fonts =
+--     let
+--         availableFonts =
+--             LoadedAndUnloadedFonts fontsPerRequest fonts
+--
+--         fontsToRequest =
+--             LUFonts.loaded availableFonts |> Fonts.families
+--     in
+--     { availableFonts = availableFonts
+--     , fontRequests = FontRequests.update FontRequests.none fontsToRequest
+--     , mjrNav = MjrNav.init defaultFontSize
+--     , showAllOrResults = All
+--     , scrollPosition = 0
+--     }
+
+
 model_Init : Fonts -> Model_
 model_Init fonts =
     let
-        availableFonts =
-            LoadedAndUnloadedFonts fontsPerRequest fonts
-
-        fontsToRequest =
-            LUFonts.loaded availableFonts |> Fonts.families
+        fontsToMakeVisible =
+            Fonts.take fontsPerRequest fonts
     in
-    { availableFonts = availableFonts
-    , fontRequests = FontRequests.update FontRequests.none fontsToRequest
+    { availableFonts = fonts
+    , visibleFonts = fontsToMakeVisible
+    , fontRequests = FontRequests.init fontsToMakeVisible
     , mjrNav = MjrNav.init defaultFontSize
     , showAllOrResults = All
     , scrollPosition = 0
@@ -184,17 +196,27 @@ updateModel_ msg model =
                         -- at bottom of page
                         let
                             unloadedFonts =
-                                LUFonts.unloaded model.availableFonts
+                                -- LUFonts.unloaded model.availableFonts
+                                Fonts.except model.visibleFonts model.availableFonts
 
-                            fontsToRequest =
-                                (Fonts.take fontsPerRequest >> Fonts.families) unloadedFonts
+                            fontsToMakeVisible =
+                                Fonts.take fontsPerRequest unloadedFonts
 
-                            fonts_ =
-                                LUFonts.load fontsPerRequest model.availableFonts
+                            -- fontsToRequest =
+                            --     (Fonts.take fontsPerRequest >> Fonts.families) unloadedFonts
+                            -- fonts_ =
+                            --     LUFonts.load fontsPerRequest model.availableFonts
                         in
+                        -- ( { model
+                        --     | availableFonts = fonts_
+                        --     , fontRequests = FontRequests.update model.fontRequests fontsToRequest
+                        --     , scrollPosition = viewportY
+                        --   }
+                        -- , Cmd.none
+                        -- )
                         ( { model
-                            | availableFonts = fonts_
-                            , fontRequests = FontRequests.update model.fontRequests fontsToRequest
+                            | visibleFonts = Fonts.append model.visibleFonts fontsToMakeVisible
+                            , fontRequests = FontRequests.update model.fontRequests fontsToMakeVisible
                             , scrollPosition = viewportY
                           }
                         , Cmd.none
@@ -263,18 +285,20 @@ updateMjrNavMsg msg model =
         MjrNav.Search search ->
             -- NOTE not sure whether Search is best as Main.Search or MjrNav.Search. All the updates here are to Main.model, not MjrNav.model, so it feels like it'd make more sense as Main.Search. But Main.Search can't be passed into MjrNav.view as MjrNav.view returns Html MjrNav.Msg. Perhaps Main.Search could be passed to a function that returns Html Main.Msg (probably defined in Main) that also contains MjrNav.view by using Html.map?
             let
-                allFonts : Fonts
-                allFonts =
-                    LUFonts.all model.availableFonts
-
+                -- allFonts : Fonts
+                -- allFonts =
+                --     LUFonts.all model.availableFonts
                 searchResults =
-                    Fonts.search search allFonts
+                    -- Fonts.search search allFonts
+                    Fonts.search search model.availableFonts
 
                 fontFamilies =
-                    Fonts.families searchResults
+                    -- Fonts.families searchResults
+                    Fonts.map Font.family searchResults
             in
             ( { model
-                | fontRequests = FontRequests.update model.fontRequests fontFamilies
+                -- | fontRequests = FontRequests.update model.fontRequests fontFamilies
+                | fontRequests = FontRequests.update model.fontRequests searchResults
                 , showAllOrResults = SearchResults searchResults
               }
             , Cmd.none
@@ -356,14 +380,18 @@ failureView err =
 
 
 successView : Int -> Model_ -> Html Msg
-successView windowWidth { availableFonts, fontRequests, mjrNav, scrollPosition, showAllOrResults } =
+successView windowWidth { availableFonts, visibleFonts, fontRequests, mjrNav, scrollPosition, showAllOrResults } =
     div []
         [ FontRequests.stylesheetLinks fontRequests
         , Html.main_ [ style "margin-bottom" "1.5em" ]
             (let
                 mainChildren =
                     [ Html.map MjrNav (MjrNav.view mjrNav windowWidth)
-                    , fontsView availableFonts showAllOrResults mjrNav
+                    , fontsView
+                        visibleFonts
+                        showAllOrResults
+                        (MjrNav.fontSize mjrNav)
+                        (sampleText (MjrNav.sampleTextInput mjrNav))
                     ]
              in
              if scrollPosition >= 300 then
@@ -376,18 +404,18 @@ successView windowWidth { availableFonts, fontRequests, mjrNav, scrollPosition, 
         ]
 
 
-fontsView fonts showAllOrResults mjrNav =
-    case showAllOrResults of
-        All ->
-            Fonts.view
-                (LUFonts.loaded fonts)
-                (sampleText (MjrNav.sampleTextInput mjrNav))
-                (MjrNav.fontSize mjrNav)
+fontsView : Fonts -> View -> String -> String -> Html msg
+fontsView availableFonts showAllOrResults fontSize sampleText_ =
+    let
+        fonts =
+            case showAllOrResults of
+                All ->
+                    availableFonts
 
-        SearchResults searchResults ->
-            Fonts.view searchResults
-                (sampleText (MjrNav.sampleTextInput mjrNav))
-                (MjrNav.fontSize mjrNav)
+                SearchResults searchResults ->
+                    searchResults
+    in
+    Fonts.view fonts sampleText_ fontSize
 
 
 sampleText : String -> String

@@ -42,23 +42,20 @@ defaultFontSize =
 
 
 type alias Model =
-    { main : WebData Model_
+    { main : WebData SuccessModel
     , windowWidth : Int
     }
 
 
-type alias Model_ =
+type alias SuccessModel =
     { availableFonts : Fonts -- the fonts that are available from Google Fonts, sorted by popularity. used to calculate fontsToShow and search results
     , visibleFonts : Fonts -- the fonts shown in the All view (doesn't include fonts from searches)
-    , fontRequests : FontRequests -- The same font should not be requested more than once (via link href or however). This could happen if a font is in a search result but it's already in the sorted-by-popularity list (or vice versa). Storing which fonts have already been requested means we can avoid requesting the same one again. (includes fonts from searches)
+    , fontRequests : FontRequests -- the font families used to build each request for fonts:
 
-    -- FontRequests also records which fonts were requested together (multiple fonts can be requested per HTTP request). Each list of fonts goes to make up the HTTP request to request that list. If the HTTP request changes, then the DOM changes (because we're using link hrefs to request fonts), and if the DOM changes, the browser might re-request unnecessarily. Sure, a link with the same href might be served by the browser's cache, but that shouldn't be relied upon. Also, while working with link href, we'll have to assume that all requests are successful.
     {-
        <link href="...FontA|FontB|FontC">
        <link href="...FontD|FontE">
     -}
-    -- This detail is hidden behind the FontRequests type.
-    -- rename to fontRequests?
     , mjrNav : MjrNav.Model
     , showAllOrResults : View -- necessary so that the view can choose between using searchResults or model.availableFonts (all) as a data source
     , scrollPosition : Float
@@ -84,32 +81,12 @@ getAvailableFonts =
     Http.get
         { url = developerApiUrl
         , expect =
-            expectJson
-                (RemoteData.fromResult >> FontsResponse)
-                Fonts.decoder
+            expectJson (RemoteData.fromResult >> FontsResponse) Fonts.decoder
         }
 
 
-
--- model_Init : Fonts -> Model_
--- model_Init fonts =
---     let
---         availableFonts =
---             LoadedAndUnloadedFonts fontsPerRequest fonts
---
---         fontsToRequest =
---             LUFonts.loaded availableFonts |> Fonts.families
---     in
---     { availableFonts = availableFonts
---     , fontRequests = FontRequests.update FontRequests.none fontsToRequest
---     , mjrNav = MjrNav.init defaultFontSize
---     , showAllOrResults = All
---     , scrollPosition = 0
---     }
-
-
-model_Init : Fonts -> Model_
-model_Init fonts =
+successModelInit : Fonts -> SuccessModel
+successModelInit fonts =
     let
         fontsToMakeVisible =
             Fonts.take fontsPerRequest fonts
@@ -173,7 +150,7 @@ update msg model =
                 Success model_ ->
                     let
                         ( main_, cmd ) =
-                            updateModel_ msg model_
+                            updateSuccessModel msg model_
                     in
                     ( { model | main = Success main_ }, cmd )
 
@@ -185,8 +162,8 @@ update msg model =
                     ( { model | main = main_ }, cmd )
 
 
-updateModel_ : Msg -> Model_ -> ( Model_, Cmd Msg )
-updateModel_ msg model =
+updateSuccessModel : Msg -> SuccessModel -> ( SuccessModel, Cmd Msg )
+updateSuccessModel msg model =
     case msg of
         GotViewport { sceneHeight, viewportHeight, viewportY } ->
             case model.showAllOrResults of
@@ -196,24 +173,11 @@ updateModel_ msg model =
                         -- at bottom of page
                         let
                             unloadedFonts =
-                                -- LUFonts.unloaded model.availableFonts
                                 Fonts.except model.visibleFonts model.availableFonts
 
                             fontsToMakeVisible =
                                 Fonts.take fontsPerRequest unloadedFonts
-
-                            -- fontsToRequest =
-                            --     (Fonts.take fontsPerRequest >> Fonts.families) unloadedFonts
-                            -- fonts_ =
-                            --     LUFonts.load fontsPerRequest model.availableFonts
                         in
-                        -- ( { model
-                        --     | availableFonts = fonts_
-                        --     , fontRequests = FontRequests.update model.fontRequests fontsToRequest
-                        --     , scrollPosition = viewportY
-                        --   }
-                        -- , Cmd.none
-                        -- )
                         ( { model
                             | visibleFonts = Fonts.append model.visibleFonts fontsToMakeVisible
                             , fontRequests = FontRequests.update model.fontRequests fontsToMakeVisible
@@ -248,23 +212,24 @@ updateModel_ msg model =
             ( model, Cmd.none )
 
 
-updateNotSuccess : Msg -> WebData Model_ -> ( WebData Model_, Cmd Msg )
+updateNotSuccess : Msg -> WebData SuccessModel -> ( WebData SuccessModel, Cmd Msg )
 updateNotSuccess msg model =
     case msg of
         FontsResponse response ->
-            -- TODO use RemoteData.update here?
-            case response of
+            ( RemoteData.map successModelInit response
+            , case response of
                 Success fonts ->
-                    ( Success (model_Init fonts), getViewport () )
+                    getViewport ()
 
                 _ ->
-                    ( RemoteData.map model_Init response, Cmd.none )
+                    Cmd.none
+            )
 
         _ ->
             ( model, Cmd.none )
 
 
-updateMjrNavMsg : MjrNav.Msg -> Model_ -> ( Model_, Cmd Msg )
+updateMjrNavMsg : MjrNav.Msg -> SuccessModel -> ( SuccessModel, Cmd Msg )
 updateMjrNavMsg msg model =
     case msg of
         MjrNav.SearchInput input ->
@@ -283,21 +248,14 @@ updateMjrNavMsg msg model =
             )
 
         MjrNav.Search search ->
-            -- NOTE not sure whether Search is best as Main.Search or MjrNav.Search. All the updates here are to Main.model, not MjrNav.model, so it feels like it'd make more sense as Main.Search. But Main.Search can't be passed into MjrNav.view as MjrNav.view returns Html MjrNav.Msg. Perhaps Main.Search could be passed to a function that returns Html Main.Msg (probably defined in Main) that also contains MjrNav.view by using Html.map?
             let
-                -- allFonts : Fonts
-                -- allFonts =
-                --     LUFonts.all model.availableFonts
                 searchResults =
-                    -- Fonts.search search allFonts
                     Fonts.search search model.availableFonts
 
                 fontFamilies =
-                    -- Fonts.families searchResults
                     Fonts.map Font.family searchResults
             in
             ( { model
-                -- | fontRequests = FontRequests.update model.fontRequests fontFamilies
                 | fontRequests = FontRequests.update model.fontRequests searchResults
                 , showAllOrResults = SearchResults searchResults
               }
@@ -379,7 +337,7 @@ failureView err =
             text ("This website couldn't understand Google Fonts' response. The response was: " ++ responseBody)
 
 
-successView : Int -> Model_ -> Html Msg
+successView : Int -> SuccessModel -> Html Msg
 successView windowWidth { availableFonts, visibleFonts, fontRequests, mjrNav, scrollPosition, showAllOrResults } =
     div []
         [ FontRequests.stylesheetLinks fontRequests
@@ -405,12 +363,12 @@ successView windowWidth { availableFonts, visibleFonts, fontRequests, mjrNav, sc
 
 
 fontsView : Fonts -> View -> String -> String -> Html msg
-fontsView availableFonts showAllOrResults fontSize sampleText_ =
+fontsView visibleFonts showAllOrResults fontSize sampleText_ =
     let
         fonts =
             case showAllOrResults of
                 All ->
-                    availableFonts
+                    visibleFonts
 
                 SearchResults searchResults ->
                     searchResults

@@ -34,6 +34,7 @@ I developed the project within four working weeks. As the Git history shows, wit
 
 # Further work
 
+- Implement feedback from Chingu that I've received on this project since submitting it.
 - Make search results load n-at-a-time too.
 - Guarantee that enough fonts will be loaded on page load to fill the screen (i.e. more than sixteen if the window is tall enough).
 - Use CSS for layout and styling, perhaps using elm-css or another CSS pre-processor.
